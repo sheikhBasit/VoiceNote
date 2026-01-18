@@ -1,5 +1,6 @@
 package com.example.voicenote.data.repository
 
+import com.example.voicenote.data.model.*
 import com.example.voicenote.data.network.*
 import com.google.gson.Gson
 import kotlinx.coroutines.flow.firstOrNull
@@ -43,7 +44,7 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
         }
     }
 
-    suspend fun processConversationChunks(transcriptions: List<String>): NoteAiOutput? {
+    suspend fun processConversationChunks(transcriptions: List<String>, role: UserRole): NoteAiOutput? {
         val config = firestoreRepository.getAppConfig().firstOrNull() ?: return null
         if (config.apiKeys.isEmpty()) return null
 
@@ -51,24 +52,34 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
         val now = Calendar.getInstance().time
         val todayStr = SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).format(now)
         
+        val roleSpecificInstruction = when(role) {
+            UserRole.STUDENT -> "Focus on key academic concepts, definitions, formulas, and potential exam questions."
+            UserRole.TEACHER -> "Focus on lesson plan points, student participation highlights, and follow-up grading tasks."
+            UserRole.DEVELOPER -> "Focus on technical architecture, bug reports, pull request tasks, and code snippet placeholders."
+            UserRole.OFFICE_WORKER -> "Focus on action items, meeting minutes, deadlines, and project milestones."
+            UserRole.PSYCHIATRIST, UserRole.PSYCHOLOGIST -> "Focus on patient sentiment, recurring themes, behavioral observations, and clinical notes while maintaining strict formal tone."
+            UserRole.BUSINESS_MAN -> "Focus on ROI, deal terms, networking contacts, and growth opportunities."
+            else -> "Provide a comprehensive professional summary and task list."
+        }
+
         val systemPrompt = """
-            You are an advanced note-taking assistant. Analyze the conversation chunks and return a structured JSON object.
+            You are an advanced AI personal assistant tailored for a ${role.name}. 
+            $roleSpecificInstruction
+            
+            Analyze the transcription and return a structured JSON object.
             Current Time Reference: $todayStr
             
             IMPORTANT: 
             1. All output fields MUST BE IN ENGLISH.
-            2. Decide the "priority" for the NOTE overall AND for each TASK independently. 
-               - If a deadline is within the next 24 hours, set priority to "High".
+            2. Decide the "priority" for the NOTE overall AND for each TASK independently.
             3. Provide distinct "googlePrompt" (search query) and "aiPrompt" (detailed instruction) for each task.
-            4. Deadlines MUST include time in "YYYY-MM-DD HH:mm" format. 
-               - NEVER set a deadline in the past. If a past date/time is mentioned, assume it refers to the next occurrence in the future.
-               - If no time is mentioned, default to 17:00 (5 PM) of the mentioned or current day.
-            5. Provide a "transcript" field which is the full conversation text, but formatted with speaker identification (e.g., Speaker A:, Speaker B:).
+            4. Deadlines MUST include time in "YYYY-MM-DD HH:mm" format.
+            5. Provide a "transcript" field with speaker identification (e.g., Speaker A:, Speaker B:).
             
             JSON Structure:
             {
-              "title": "A 3-5 word descriptive title in English",
-              "summary": "A 2-sentence breakdown of the conversation in English",
+              "title": "A descriptive title in English",
+              "summary": "A role-specific summary in English",
               "priority": "High, Medium, or Low",
               "transcript": "The full formatted transcript with speaker labels",
               "tasks": [
@@ -76,8 +87,8 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
                   "description": "Task description in English",
                   "priority": "High, Medium, or Low",
                   "deadline": "YYYY-MM-DD HH:mm format",
-                  "googlePrompt": "A specific search query to help gather info for this task",
-                  "aiPrompt": "A detailed prompt to give to an AI to help execute this task"
+                  "googlePrompt": "A search query for this task",
+                  "aiPrompt": "An AI prompt for this task"
                 }
               ]
             }
@@ -85,15 +96,9 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
         """.trimIndent()
 
         val messages = mutableListOf(Message(role = "system", content = systemPrompt))
-        transcriptions.forEach { chunk ->
-            messages.add(Message(role = "user", content = chunk))
-        }
+        transcriptions.forEach { messages.add(Message(role = "user", content = it)) }
 
-        val request = GroqRequest(
-            model = "llama-3.1-8b-instant",
-            messages = messages,
-            temperature = 0.6
-        )
+        val request = GroqRequest(model = "llama-3.1-8b-instant", messages = messages)
 
         return try {
             val response = groqApi.getChatCompletion("Bearer $currentKey", request)
@@ -103,6 +108,31 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
         } catch (e: Exception) {
             firestoreRepository.rotateApiKey()
             null
+        }
+    }
+
+    suspend fun askAssistant(note: Note, question: String): String {
+        val config = firestoreRepository.getAppConfig().firstOrNull() ?: return "API config error."
+        if (config.apiKeys.isEmpty()) return "No API keys found."
+
+        val currentKey = config.apiKeys[config.currentKeyIndex]
+        
+        val systemPrompt = "You are a helpful assistant. You have access to the following note context: ${note.summary}. Transcript: ${note.transcript}. Answer the user's question based strictly on this context."
+        
+        val request = GroqRequest(
+            model = "llama-3.1-8b-instant",
+            messages = listOf(
+                Message(role = "system", content = systemPrompt),
+                Message(role = "user", content = question)
+            ),
+            responseFormat = ResponseFormat(type = "text") // We want a direct text answer
+        )
+
+        return try {
+            val response = groqApi.getChatCompletion("Bearer $currentKey", request)
+            response.choices.firstOrNull()?.message?.content ?: "I couldn't generate an answer."
+        } catch (e: Exception) {
+            "Error communicating with AI brain."
         }
     }
 }

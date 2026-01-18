@@ -1,18 +1,21 @@
 package com.example.voicenote.data.repository
 
+import android.net.Uri
 import android.util.Log
 import com.example.voicenote.data.model.*
 import com.google.firebase.firestore.Query
-import com.google.firebase.firestore.toObjects
-import com.google.firebase.ktx.Firebase
 import com.google.firebase.firestore.ktx.firestore
+import com.google.firebase.ktx.Firebase
+import com.google.firebase.storage.ktx.storage
 import kotlinx.coroutines.channels.awaitClose
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.callbackFlow
 import kotlinx.coroutines.tasks.await
+import java.io.File
 
 class FirestoreRepository {
     private val db = Firebase.firestore
+    private val storage = Firebase.storage
     private val notesCollection = db.collection("notes")
     private val tasksCollection = db.collection("tasks")
     private val configCollection = db.collection("config")
@@ -20,8 +23,37 @@ class FirestoreRepository {
 
     // --- User Management ---
     suspend fun saveUser(user: User) {
-        if (user.token.isEmpty()) return
-        usersCollection.document(user.token).set(user).await()
+        if (user.deviceId.isEmpty()) return
+        usersCollection.document(user.deviceId).set(user).await()
+    }
+
+    suspend fun getUserByDeviceId(deviceId: String): User? {
+        return try {
+            val doc = usersCollection.document(deviceId).get().await()
+            if (doc.exists()) doc.toObject(User::class.java) else null
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun getUserFlow(deviceId: String): Flow<User?> = callbackFlow {
+        val subscription = usersCollection.document(deviceId)
+            .addSnapshotListener { snapshot, _ ->
+                trySend(snapshot?.toObject(User::class.java))
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    // --- Audio Upload ---
+    suspend fun uploadAudio(userId: String, file: File): String? {
+        return try {
+            val ref = storage.reference.child("audio/$userId/${file.name}")
+            ref.putFile(Uri.fromFile(file)).await()
+            ref.downloadUrl.await().toString()
+        } catch (e: Exception) {
+            Log.e("Storage", "Upload failed", e)
+            null
+        }
     }
 
     // --- Config Management ---
@@ -83,19 +115,6 @@ class FirestoreRepository {
         awaitClose { subscription.remove() }
     }
 
-    fun getTasksForNote(noteId: String): Flow<List<Task>> = callbackFlow {
-        val subscription = tasksCollection
-            .whereEqualTo("noteId", noteId)
-            .addSnapshotListener { snapshot, error ->
-                if (error != null) return@addSnapshotListener
-                if (snapshot != null) {
-                    val tasks = snapshot.toObjects<Task>().filter { !it.isDeleted }
-                    trySend(tasks)
-                }
-            }
-        awaitClose { subscription.remove() }
-    }
-
     suspend fun saveNote(note: Note) {
         val docRef = if (note.id.isEmpty()) notesCollection.document() else notesCollection.document(note.id)
         docRef.set(note.copy(id = docRef.id, updatedAt = System.currentTimeMillis())).await()
@@ -110,6 +129,47 @@ class FirestoreRepository {
             "isDeleted", true,
             "deletedAt", System.currentTimeMillis()
         ).await()
+    }
+
+    suspend fun restoreNote(noteId: String) {
+        notesCollection.document(noteId).update(
+            "isDeleted", false,
+            "deletedAt", null
+        ).await()
+    }
+
+    suspend fun deleteNotes(noteIds: List<String>) {
+        val batch = db.batch()
+        noteIds.forEach { id ->
+            batch.update(notesCollection.document(id), "isDeleted", true, "deletedAt", System.currentTimeMillis())
+        }
+        batch.commit().await()
+    }
+
+    // --- Tasks Management ---
+    fun getTasksForNote(noteId: String): Flow<List<Task>> = callbackFlow {
+        val subscription = tasksCollection
+            .whereEqualTo("noteId", noteId)
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                if (snapshot != null) {
+                    val tasks = snapshot.toObjects(Task::class.java).filter { !it.isDeleted }
+                    trySend(tasks)
+                }
+            }
+        awaitClose { subscription.remove() }
+    }
+
+    fun getAllTasks(): Flow<List<Task>> = callbackFlow {
+        val subscription = tasksCollection
+            .addSnapshotListener { snapshot, error ->
+                if (error != null) return@addSnapshotListener
+                if (snapshot != null) {
+                    val tasks = snapshot.toObjects(Task::class.java).filter { !it.isDeleted }
+                    trySend(tasks)
+                }
+            }
+        awaitClose { subscription.remove() }
     }
 
     suspend fun addTask(task: Task) {
@@ -131,5 +191,20 @@ class FirestoreRepository {
             "isDeleted", true,
             "deletedAt", System.currentTimeMillis()
         ).await()
+    }
+
+    suspend fun restoreTask(taskId: String) {
+        tasksCollection.document(taskId).update(
+            "isDeleted", false,
+            "deletedAt", null
+        ).await()
+    }
+
+    suspend fun deleteTasks(taskIds: List<String>) {
+        val batch = db.batch()
+        taskIds.forEach { id ->
+            batch.update(tasksCollection.document(id), "isDeleted", true, "deletedAt", System.currentTimeMillis())
+        }
+        batch.commit().await()
     }
 }

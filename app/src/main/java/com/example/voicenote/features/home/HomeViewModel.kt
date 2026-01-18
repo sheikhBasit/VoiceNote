@@ -19,6 +19,38 @@ class HomeViewModel(private val repository: FirestoreRepository = FirestoreRepos
         viewModelScope.launch { repository.softDeleteNote(note.id) }
     }
 
+    fun restoreNote(noteId: String) {
+        viewModelScope.launch { repository.restoreNote(noteId) }
+    }
+
+    fun deleteNotes(noteIds: List<String>) {
+        viewModelScope.launch { repository.deleteNotes(noteIds) }
+    }
+
+    fun restoreNotes(noteIds: List<String>) {
+        viewModelScope.launch {
+            noteIds.forEach { repository.restoreNote(it) }
+        }
+    }
+
+    fun togglePin(note: Note) {
+        viewModelScope.launch {
+            repository.saveNote(note.copy(isPinned = !note.isPinned))
+        }
+    }
+
+    fun toggleLike(note: Note) {
+        viewModelScope.launch {
+            repository.saveNote(note.copy(isLiked = !note.isLiked))
+        }
+    }
+
+    fun toggleArchive(note: Note) {
+        viewModelScope.launch {
+            repository.saveNote(note.copy(isArchived = !note.isArchived))
+        }
+    }
+
     fun onMarkAsDone(note: Note) {
         viewModelScope.launch { repository.updateStatus(note.id, NoteStatus.DONE) }
     }
@@ -33,6 +65,17 @@ class HomeViewModel(private val repository: FirestoreRepository = FirestoreRepos
                 )
             )
         }
+    }
+
+    fun updateStatus(noteId: String, status: NoteStatus) {
+        viewModelScope.launch {
+            repository.updateStatus(noteId, status)
+        }
+    }
+
+    fun onManualSync() {
+        // This will be handled by sending an intent to VoiceRecordingService 
+        // to re-process the last recording if it exists.
     }
 
     // Keep for quick testing if needed

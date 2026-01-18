@@ -39,6 +39,7 @@ import androidx.navigation.compose.rememberNavController
 import com.example.voicenote.core.security.SecurityManager
 import com.example.voicenote.core.service.OverlayService
 import com.example.voicenote.core.service.VoiceRecordingService
+import com.example.voicenote.core.workers.ReminderWorker
 import com.example.voicenote.data.model.User
 import com.example.voicenote.data.repository.FirestoreRepository
 import com.example.voicenote.features.detail.NoteDetailScreen
@@ -47,6 +48,7 @@ import com.example.voicenote.features.settings.ApiSettingsScreen
 import com.example.voicenote.features.tasks.TasksScreen
 import com.example.voicenote.ui.theme.VoiceNoteTheme
 import kotlinx.coroutines.launch
+import java.io.File
 import java.util.concurrent.Executor
 
 class MainActivity : AppCompatActivity() {
@@ -63,19 +65,28 @@ class MainActivity : AppCompatActivity() {
         executor = ContextCompat.getMainExecutor(this)
         securityManager = SecurityManager(this)
         
+        ReminderWorker.schedule(this)
+        
+        val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: Build.SERIAL
+
         setContent {
             var isAuthenticated by remember { 
                 mutableStateOf(!securityManager.isBiometricEnabled() || securityManager.hasBypassedOnce()) 
             }
+            var showOverlayDialog by remember { mutableStateOf(false) }
             
             val permissionsLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { permissions ->
                 val allGranted = permissions.entries.all { it.value }
                 if (allGranted) {
-                    checkOverlayPermission()
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                        showOverlayDialog = true
+                    } else {
+                        startService(Intent(this, OverlayService::class.java))
+                    }
                 } else {
-                    Toast.makeText(this, "Permissions required for full functionality", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Permissions required", Toast.LENGTH_LONG).show()
                 }
             }
 
@@ -87,6 +98,9 @@ class MainActivity : AppCompatActivity() {
                     Manifest.permission.ACCESS_COARSE_LOCATION,
                     Manifest.permission.READ_CALENDAR,
                     Manifest.permission.WRITE_CALENDAR,
+                    Manifest.permission.READ_CONTACTS,
+                    Manifest.permission.CALL_PHONE,
+                    Manifest.permission.CAMERA,
                     "com.android.alarm.permission.SET_ALARM"
                 ))
             }
@@ -94,22 +108,38 @@ class MainActivity : AppCompatActivity() {
             VoiceNoteTheme {
                 Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
                     if (isAuthenticated) {
-                        AppNavigation()
+                        val navToNoteId = intent.getStringExtra("note_id_to_open")
+                        AppNavigation(navToNoteId)
                     } else {
                         AuthScreen { 
                             showBiometricPrompt { 
                                 securityManager.setBypassedOnce(true)
                                 isAuthenticated = true 
-                                syncUser()
+                                handleUserRegistration(deviceId)
                             } 
                         }
+                    }
+
+                    if (showOverlayDialog) {
+                        AlertDialog(
+                            onDismissRequest = { showOverlayDialog = false },
+                            title = { Text("Display Over Other Apps") },
+                            text = { Text("Required for the floating assistant button.") },
+                            confirmButton = {
+                                Button(onClick = {
+                                    showOverlayDialog = false
+                                    startActivity(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName")))
+                                }) { Text("Go to Settings") }
+                            },
+                            dismissButton = { TextButton(onClick = { showOverlayDialog = false }) { Text("Later") } }
+                        )
                     }
                 }
             }
         }
     }
 
-    private fun syncUser() {
+    private fun handleUserRegistration(deviceId: String) {
         val token = securityManager.getSessionToken() ?: securityManager.generateNewToken()
         val deviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
             Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
@@ -118,27 +148,11 @@ class MainActivity : AppCompatActivity() {
         }
         
         lifecycleScope.launch {
-            repository.saveUser(
-                User(
-                    token = token,
-                    name = deviceName,
-                    deviceModel = Build.MODEL,
-                    lastLogin = System.currentTimeMillis()
-                )
-            )
-        }
-    }
-
-    private fun checkOverlayPermission() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
-            if (!Settings.canDrawOverlays(this)) {
-                val intent = Intent(
-                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                    Uri.parse("package:$packageName")
-                )
-                startActivity(intent)
+            val existingUser = repository.getUserByDeviceId(deviceId)
+            if (existingUser == null) {
+                repository.saveUser(User(token = token, name = deviceName, deviceId = deviceId, deviceModel = Build.MODEL, lastLogin = System.currentTimeMillis()))
             } else {
-                startService(Intent(this, OverlayService::class.java))
+                repository.saveUser(existingUser.copy(lastLogin = System.currentTimeMillis()))
             }
         }
     }
@@ -152,13 +166,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     @Composable
-    fun AppNavigation() {
+    fun AppNavigation(initialNoteId: String? = null) {
         val navController = rememberNavController()
         val items = listOf("tasks", "notes", "stt_logs", "settings")
 
+        // Handle deep-link navigation if noteId is passed from notification
+        LaunchedEffect(initialNoteId) {
+            initialNoteId?.let {
+                navController.navigate("detail/$it")
+            }
+        }
+
         Scaffold(
             bottomBar = {
-                NavigationBar {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
                     val navBackStackEntry by navController.currentBackStackEntryAsState()
                     val currentDestination = navBackStackEntry?.destination
                     
@@ -190,18 +211,10 @@ class MainActivity : AppCompatActivity() {
             }
         ) { innerPadding ->
             NavHost(navController, startDestination = "tasks", Modifier.padding(innerPadding)) {
-                composable("tasks") {
-                    TasksScreen(onTaskClick = { noteId -> navController.navigate("detail/$noteId") })
-                }
-                composable("notes") {
-                    HomeScreen(onNoteClick = { note -> navController.navigate("detail/${note.id}") })
-                }
-                composable("stt_logs") {
-                    SttLogsScreen()
-                }
-                composable("settings") {
-                    ApiSettingsScreen()
-                }
+                composable("tasks") { TasksScreen(onTaskClick = { noteId -> navController.navigate("detail/$noteId") }) }
+                composable("notes") { HomeScreen(onNoteClick = { note -> navController.navigate("detail/${note.id}") }) }
+                composable("stt_logs") { SttLogsScreen() }
+                composable("settings") { ApiSettingsScreen() }
                 composable("detail/{noteId}") { backStackEntry ->
                     val noteId = backStackEntry.arguments?.getString("noteId") ?: ""
                     NoteDetailScreen(noteId = noteId, onBack = { navController.popBackStack() })
@@ -236,7 +249,7 @@ class MainActivity : AppCompatActivity() {
                             modifier = Modifier.padding(16.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
-                            Text("voice_recording.mp3", modifier = Modifier.weight(1f))
+                            Text("voice_recording.mp4", modifier = Modifier.weight(1f))
                             IconButton(onClick = { playAudio(lastFilePath!!) }) {
                                 Icon(Icons.Default.PlayArrow, contentDescription = "Play", tint = MaterialTheme.colorScheme.primary)
                             }
@@ -248,26 +261,10 @@ class MainActivity : AppCompatActivity() {
                 Text("Whisper Transcription:", style = MaterialTheme.typography.labelLarge)
                 Spacer(modifier = Modifier.height(8.dp))
                 
-                if (history.isEmpty()) {
-                    Box(modifier = Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                        Text("No sessions processed yet.", style = MaterialTheme.typography.bodyMedium)
-                    }
-                } else {
-                    LazyColumn(
-                        modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(8.dp)
-                    ) {
-                        items(history) { text ->
-                            Card(
-                                modifier = Modifier.fillMaxWidth(),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))
-                            ) {
-                                Text(
-                                    text = text,
-                                    modifier = Modifier.padding(16.dp),
-                                    style = MaterialTheme.typography.bodyLarge
-                                )
-                            }
+                LazyColumn(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(history) { text ->
+                        Card(modifier = Modifier.fillMaxWidth(), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f))) {
+                            Text(text = text, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyLarge)
                         }
                     }
                 }
@@ -277,6 +274,11 @@ class MainActivity : AppCompatActivity() {
 
     private fun playAudio(path: String) {
         try {
+            val file = File(path)
+            if (!file.exists()) {
+                Toast.makeText(this, "File not found at: $path", Toast.LENGTH_SHORT).show()
+                return
+            }
             mediaPlayer?.release()
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(path)
@@ -284,7 +286,8 @@ class MainActivity : AppCompatActivity() {
                 start()
             }
         } catch (e: Exception) {
-            Toast.makeText(this, "Playback error", Toast.LENGTH_SHORT).show()
+            Log.e("Playback", "Error playing: $path", e)
+            Toast.makeText(this, "Playback error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -309,6 +312,11 @@ class MainActivity : AppCompatActivity() {
         } catch (e: Exception) {
             biometricPrompt.authenticate(promptInfo)
         }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
     }
 
     override fun onDestroy() {

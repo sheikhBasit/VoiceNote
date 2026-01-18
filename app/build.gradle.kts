@@ -60,10 +60,17 @@ dependencies {
 
     implementation("androidx.biometric:biometric:1.2.0-alpha05")
     implementation("androidx.security:security-crypto:1.1.0-alpha06")
+    
+    // WorkManager for background reminders
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
+
+    // Coil for image loading
+    implementation("io.coil-kt:coil-compose:2.6.0")
 
     // Firebase (BOM keeps versions in sync)
     implementation(platform("com.google.firebase:firebase-bom:33.5.1"))
     implementation("com.google.firebase:firebase-firestore")
+    implementation("com.google.firebase:firebase-storage") // Added for Audio Upload
 
     // Retrofit for Groq API
     implementation("com.squareup.retrofit2:retrofit:2.11.0")

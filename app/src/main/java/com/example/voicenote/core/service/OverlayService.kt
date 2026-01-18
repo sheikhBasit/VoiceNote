@@ -5,22 +5,28 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
+import android.provider.Settings
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
+import android.view.ViewConfiguration
 import android.view.WindowManager
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandHorizontally
+import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -32,12 +38,18 @@ import androidx.savedstate.SavedStateRegistry
 import androidx.savedstate.SavedStateRegistryController
 import androidx.savedstate.SavedStateRegistryOwner
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
+import com.example.voicenote.MainActivity
+import com.example.voicenote.data.repository.FirestoreRepository
 import com.example.voicenote.ui.theme.VoiceNoteTheme
+import kotlinx.coroutines.flow.firstOrNull
+import kotlinx.coroutines.launch
+import java.util.*
 
 class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStateRegistryOwner {
 
     private lateinit var windowManager: WindowManager
     private var floatingView: View? = null
+    private val repository = FirestoreRepository()
 
     private val lifecycleRegistry = LifecycleRegistry(this)
     override val lifecycle: Lifecycle get() = lifecycleRegistry
@@ -48,17 +60,19 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
     private val savedStateRegistryController = SavedStateRegistryController.create(this)
     override val savedStateRegistry: SavedStateRegistry get() = savedStateRegistryController.savedStateRegistry
 
+    private val isExpandedState = mutableStateOf(false)
+    private val handler = Handler(Looper.getMainLooper())
+
     override fun onCreate() {
         super.onCreate()
-        savedStateRegistryController.performAttach()
         savedStateRegistryController.performRestore(null)
         lifecycleRegistry.currentState = Lifecycle.State.CREATED
         
         windowManager = getSystemService(Context.WINDOW_SERVICE) as WindowManager
-        showFloatingButton()
+        showFloatingHub()
     }
 
-    private fun showFloatingButton() {
+    private fun showFloatingHub() {
         val params = WindowManager.LayoutParams(
             WindowManager.LayoutParams.WRAP_CONTENT,
             WindowManager.LayoutParams.WRAP_CONTENT,
@@ -67,12 +81,13 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
             else
                 @Suppress("DEPRECATION") WindowManager.LayoutParams.TYPE_PHONE,
             WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or 
-                @Suppress("DEPRECATION") WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED,
+                @Suppress("DEPRECATION") WindowManager.LayoutParams.FLAG_SHOW_WHEN_LOCKED or
+                WindowManager.LayoutParams.FLAG_WATCH_OUTSIDE_TOUCH,
             PixelFormat.TRANSLUCENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
             x = 0
-            y = 300
+            y = 400
         }
 
         val composeView = ComposeView(this).apply {
@@ -81,34 +96,66 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
             setViewTreeSavedStateRegistryOwner(this@OverlayService)
             setContent {
                 VoiceNoteTheme {
-                    val isRecordingSession by VoiceRecordingService.isRecording.collectAsState()
-                    
-                    // Subtle colors to blend in
-                    val bgColor = if (isRecordingSession) {
-                        MaterialTheme.colorScheme.errorContainer.copy(alpha = 0.6f)
-                    } else {
-                        MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)
-                    }
-                    
-                    val iconColor = if (isRecordingSession) {
-                        MaterialTheme.colorScheme.error
-                    } else {
-                        MaterialTheme.colorScheme.onSurfaceVariant
+                    val isExpanded by isExpandedState
+                    val isRecording by VoiceRecordingService.isRecording.collectAsState()
+                    var isVisibleBySchedule by remember { mutableStateOf(true) }
+
+                    LaunchedEffect(Unit) {
+                        launch {
+                            val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: Build.SERIAL
+                            val user = repository.getUserByDeviceId(deviceId)
+                            if (user != null && user.floatingButtonScheduled) {
+                                val now = Calendar.getInstance()
+                                val hour = now.get(Calendar.HOUR_OF_DAY)
+                                val day = now.get(Calendar.DAY_OF_WEEK)
+                                isVisibleBySchedule = (hour >= user.workStartHour && hour < user.workEndHour) && 
+                                                     user.workDays.contains(day)
+                            } else {
+                                isVisibleBySchedule = true
+                            }
+                        }
                     }
 
-                    Box(
-                        modifier = Modifier
-                            .size(50.dp)
-                            .clip(CircleShape)
-                            .background(bgColor),
-                        contentAlignment = Alignment.Center
-                    ) {
-                        Icon(
-                            if (isRecordingSession) Icons.Default.Stop else Icons.Default.Mic,
-                            contentDescription = null, 
-                            tint = iconColor,
-                            modifier = Modifier.size(24.dp)
-                        )
+                    if (isVisibleBySchedule) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier
+                                .padding(8.dp)
+                                .clip(RoundedCornerShape(30.dp))
+                                .background(Color.Gray.copy(alpha = 0.6f))
+                                .padding(4.dp)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(48.dp)
+                                    .clip(CircleShape)
+                                    .background(
+                                        if (isRecording) Color.Red.copy(alpha = 0.8f) 
+                                        else Color.DarkGray.copy(alpha = 0.8f)
+                                    ),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(
+                                    if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
+                                    contentDescription = null,
+                                    tint = Color.White
+                                )
+                            }
+
+                            AnimatedVisibility(
+                                visible = isExpanded,
+                                enter = expandHorizontally(),
+                                exit = shrinkHorizontally()
+                            ) {
+                                Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                                    ShortcutIcon(Icons.Default.Checklist) { launchApp("tasks"); isExpandedState.value = false }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    ShortcutIcon(Icons.Default.Description) { launchApp("notes"); isExpandedState.value = false }
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    ShortcutIcon(Icons.Default.Settings) { launchApp("settings"); isExpandedState.value = false }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -121,6 +168,13 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
             private var initialY = 0
             private var initialTouchX = 0f
             private var initialTouchY = 0f
+            private var isMoving = false
+            private var longClickTriggered = false
+
+            private val longClickRunnable = Runnable {
+                isExpandedState.value = !isExpandedState.value
+                longClickTriggered = true
+            }
 
             override fun onTouch(v: View, event: MotionEvent): Boolean {
                 when (event.action) {
@@ -129,20 +183,35 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
                         initialY = params.y
                         initialTouchX = event.rawX
                         initialTouchY = event.rawY
+                        isMoving = false
+                        longClickTriggered = false
+                        handler.postDelayed(longClickRunnable, ViewConfiguration.getLongPressTimeout().toLong())
                         return true
                     }
                     MotionEvent.ACTION_MOVE -> {
-                        params.x = initialX + (event.rawX - initialTouchX).toInt()
-                        params.y = initialY + (event.rawY - initialTouchY).toInt()
-                        windowManager.updateViewLayout(floatingView, params)
+                        val deltaX = event.rawX - initialTouchX
+                        val deltaY = event.rawY - initialTouchY
+                        
+                        if (Math.abs(deltaX) > 10 || Math.abs(deltaY) > 10) {
+                            if (!isMoving) {
+                                handler.removeCallbacks(longClickRunnable)
+                            }
+                            isMoving = true
+                            params.x = initialX + deltaX.toInt()
+                            params.y = initialY + deltaY.toInt()
+                            windowManager.updateViewLayout(floatingView, params)
+                        }
                         return true
                     }
                     MotionEvent.ACTION_UP -> {
-                        val diffX = event.rawX - initialTouchX
-                        val diffY = event.rawY - initialTouchY
-                        if (Math.abs(diffX) < 10 && Math.abs(diffY) < 10) {
+                        handler.removeCallbacks(longClickRunnable)
+                        if (!isMoving && !longClickTriggered) {
                             toggleRecording()
                         }
+                        return true
+                    }
+                    MotionEvent.ACTION_OUTSIDE -> {
+                        isExpandedState.value = false
                         return true
                     }
                 }
@@ -151,6 +220,28 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
         })
 
         windowManager.addView(floatingView, params)
+    }
+
+    @Composable
+    private fun ShortcutIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(Color.LightGray.copy(alpha = 0.4f))
+                .clickable { onClick() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
+        }
+    }
+
+    private fun launchApp(route: String) {
+        val intent = Intent(this, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            putExtra("navigate_to", route)
+        }
+        startActivity(intent)
     }
 
     private fun toggleRecording() {

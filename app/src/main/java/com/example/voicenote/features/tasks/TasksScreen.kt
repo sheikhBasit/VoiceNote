@@ -1,10 +1,16 @@
 package com.example.voicenote.features.tasks
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Checklist
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
 import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
@@ -12,11 +18,13 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.voicenote.core.components.PriorityBadge
 import com.example.voicenote.data.model.Priority
 import com.example.voicenote.data.model.Task
 import com.example.voicenote.data.repository.FirestoreRepository
@@ -28,31 +36,6 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 
-class TasksViewModel(private val repository: FirestoreRepository = FirestoreRepository()) : ViewModel() {
-    private val _tasks = MutableStateFlow<List<Task>>(emptyList())
-    val tasks: StateFlow<List<Task>> = _tasks.asStateFlow()
-
-    init {
-        viewModelScope.launch {
-            repository.getNotes().collectLatest { notes ->
-                val allTasksList = mutableListOf<Task>()
-                notes.forEach { note ->
-                    repository.getTasksForNote(note.id).firstOrNull()?.let {
-                        allTasksList.addAll(it)
-                    }
-                }
-                _tasks.value = allTasksList
-            }
-        }
-    }
-
-    fun toggleTask(task: Task) {
-        viewModelScope.launch {
-            repository.updateTaskStatus(task.id, !task.isDone)
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(
@@ -60,94 +43,125 @@ fun TasksScreen(
     onTaskClick: (String) -> Unit = {}
 ) {
     val allTasks by viewModel.tasks.collectAsState()
+    val doneTasks by viewModel.doneTasks.collectAsState()
+    
     var selectedTabIndex by remember { mutableIntStateOf(0) }
     var searchQuery by remember { mutableStateOf("") }
-    val tabs = listOf("High", "Medium", "Low")
+    var showDoneTasks by remember { mutableStateOf(false) }
     
-    val tabColors = listOf(
-        PriorityHigh,
-        PriorityMedium,
-        PriorityLow
-    )
+    val tabs = listOf("High", "Medium", "Low")
+    val tabColors = listOf(PriorityHigh, PriorityMedium, PriorityLow)
 
-    val filteredTasks = remember(allTasks, selectedTabIndex, searchQuery) {
-        val priority = when (selectedTabIndex) {
-            0 -> Priority.HIGH
-            1 -> Priority.MEDIUM
-            else -> Priority.LOW
+    val selectedTaskIds = remember { mutableStateListOf<String>() }
+    val isSelectionMode = selectedTaskIds.isNotEmpty()
+    
+    val snackbarHostState = remember { SnackbarHostState() }
+    val scope = rememberCoroutineScope()
+
+    val currentTasks = if (showDoneTasks) doneTasks else allTasks
+
+    val filteredTasks = remember(currentTasks, selectedTabIndex, searchQuery, showDoneTasks) {
+        val base = if (showDoneTasks) currentTasks 
+        else {
+            val priority = when (selectedTabIndex) {
+                0 -> Priority.HIGH
+                1 -> Priority.MEDIUM
+                else -> Priority.LOW
+            }
+            currentTasks.filter { it.priority == priority && !it.isDone }
         }
-        allTasks.filter { 
-            it.priority == priority && 
-            (searchQuery.isEmpty() || it.description.contains(searchQuery, ignoreCase = true))
-        }
+        
+        if (searchQuery.isEmpty()) base
+        else base.filter { it.description.contains(searchQuery, ignoreCase = true) }
     }
 
     Scaffold(
+        snackbarHost = { SnackbarHost(snackbarHostState) },
         topBar = {
             Column(modifier = Modifier.background(MaterialTheme.colorScheme.background)) {
-                TopAppBar(
-                    title = { Text("Task Board", fontWeight = FontWeight.Bold) },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.background,
-                        titleContentColor = MaterialTheme.colorScheme.onBackground
-                    )
-                )
-                SearchBar(
-                    query = searchQuery,
-                    onQueryChange = { searchQuery = it },
-                    onSearch = {},
-                    active = false,
-                    onActiveChange = {},
-                    placeholder = { Text("Search tasks...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(horizontal = 16.dp, vertical = 8.dp),
-                    colors = SearchBarDefaults.colors(
-                        containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f)
-                    )
-                ) {}
-                
-                TabRow(
-                    selectedTabIndex = selectedTabIndex,
-                    containerColor = MaterialTheme.colorScheme.background,
-                    contentColor = tabColors[selectedTabIndex],
-                    indicator = { tabPositions ->
-                        TabRowDefaults.SecondaryIndicator(
-                            Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
-                            color = tabColors[selectedTabIndex]
-                        )
-                    }
-                ) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
-                            text = { 
-                                Text(
-                                    title,
-                                    color = if (selectedTabIndex == index) tabColors[index] else MaterialTheme.colorScheme.onSurfaceVariant
-                                ) 
+                if (isSelectionMode) {
+                    TopAppBar(
+                        title = { Text("${selectedTaskIds.size} Selected") },
+                        navigationIcon = {
+                            IconButton(onClick = { selectedTaskIds.clear() }) {
+                                Icon(Icons.Default.Close, contentDescription = "Cancel")
                             }
-                        )
+                        },
+                        actions = {
+                            IconButton(onClick = {
+                                val idsToDelete = selectedTaskIds.toList()
+                                viewModel.deleteTasks(idsToDelete)
+                                selectedTaskIds.clear()
+                                scope.launch {
+                                    val result = snackbarHostState.showSnackbar(
+                                        message = "Tasks deleted",
+                                        actionLabel = "Undo",
+                                        duration = SnackbarDuration.Short
+                                    )
+                                    if (result == SnackbarResult.ActionPerformed) {
+                                        viewModel.restoreTasks(idsToDelete)
+                                    }
+                                }
+                            }) {
+                                Icon(Icons.Default.Delete, contentDescription = "Delete Selected")
+                            }
+                        }
+                    )
+                } else {
+                    TopAppBar(
+                        title = { Text(if (showDoneTasks) "Done Tasks" else "Task Board", fontWeight = FontWeight.Bold) },
+                        colors = TopAppBarDefaults.topAppBarColors(
+                            containerColor = MaterialTheme.colorScheme.background,
+                            titleContentColor = MaterialTheme.colorScheme.onBackground
+                        ),
+                        actions = {
+                            IconButton(onClick = { showDoneTasks = !showDoneTasks }) {
+                                Icon(
+                                    if (showDoneTasks) Icons.Default.Checklist else Icons.Default.DoneAll,
+                                    contentDescription = "Show Done",
+                                    tint = if (showDoneTasks) MaterialTheme.colorScheme.primary else LocalContentColor.current
+                                )
+                            }
+                        }
+                    )
+                    SearchBar(
+                        query = searchQuery,
+                        onQueryChange = { searchQuery = it },
+                        onSearch = {},
+                        active = false,
+                        onActiveChange = {},
+                        placeholder = { Text("Search tasks...") },
+                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
+                    ) {}
+                }
+                
+                if (!showDoneTasks) {
+                    TabRow(
+                        selectedTabIndex = selectedTabIndex,
+                        containerColor = MaterialTheme.colorScheme.background,
+                        indicator = { tabPositions ->
+                            TabRowDefaults.SecondaryIndicator(
+                                Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
+                                color = tabColors[selectedTabIndex]
+                            )
+                        }
+                    ) {
+                        tabs.forEachIndexed { index, title ->
+                            Tab(
+                                selected = selectedTabIndex == index,
+                                onClick = { selectedTabIndex = index },
+                                text = { Text(title, color = if (selectedTabIndex == index) tabColors[index] else MaterialTheme.colorScheme.onSurfaceVariant) }
+                            )
+                        }
                     }
                 }
             }
         }
     ) { padding ->
         if (filteredTasks.isEmpty()) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding), 
-                contentAlignment = Alignment.Center
-            ) {
-                Text(
-                    if (searchQuery.isEmpty()) "No ${tabs[selectedTabIndex]} tasks found." 
-                    else "No tasks match \"$searchQuery\"",
-                    style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Box(modifier = Modifier.fillMaxSize().padding(padding), contentAlignment = Alignment.Center) {
+                Text(if (showDoneTasks) "No completed tasks yet." else "No ${tabs[selectedTabIndex]} tasks found.")
             }
         } else {
             LazyColumn(
@@ -156,10 +170,21 @@ fun TasksScreen(
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
                 items(filteredTasks, key = { it.id }) { task ->
+                    val isSelected = selectedTaskIds.contains(task.id)
                     TaskBoardCard(
-                        task = task, 
+                        task = task,
+                        isSelected = isSelected,
                         onToggle = { viewModel.toggleTask(task) },
-                        onClick = { onTaskClick(task.noteId) }
+                        onClick = { 
+                            if (isSelectionMode) {
+                                if (isSelected) selectedTaskIds.remove(task.id) else selectedTaskIds.add(task.id)
+                            } else {
+                                onTaskClick(task.noteId)
+                            }
+                        },
+                        onLongClick = {
+                            if (!isSelectionMode) selectedTaskIds.add(task.id)
+                        }
                     )
                 }
             }
@@ -168,16 +193,30 @@ fun TasksScreen(
 }
 
 @Composable
-fun TaskBoardCard(task: Task, onToggle: () -> Unit, onClick: () -> Unit) {
+fun TaskBoardCard(
+    task: Task, 
+    isSelected: Boolean,
+    onToggle: () -> Unit, 
+    onClick: () -> Unit,
+    onLongClick: () -> Unit
+) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
     
     Card(
-        onClick = onClick,
-        modifier = Modifier.fillMaxWidth(),
+        modifier = Modifier
+            .fillMaxWidth()
+            .pointerInput(Unit) {
+                detectTapGestures(
+                    onLongPress = { onLongClick() },
+                    onTap = { onClick() }
+                )
+            },
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer 
+                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
         ),
-        elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
+        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 2.dp),
+        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Row(
             modifier = Modifier.padding(16.dp),
@@ -186,19 +225,22 @@ fun TaskBoardCard(task: Task, onToggle: () -> Unit, onClick: () -> Unit) {
             Checkbox(
                 checked = task.isDone, 
                 onCheckedChange = { _ -> onToggle() },
-                colors = CheckboxDefaults.colors(
-                    checkedColor = MaterialTheme.colorScheme.primary
-                )
+                colors = CheckboxDefaults.colors(checkedColor = MaterialTheme.colorScheme.primary)
             )
             Spacer(modifier = Modifier.width(8.dp))
             Column(modifier = Modifier.weight(1f)) {
-                Text(
-                    text = task.description,
-                    style = MaterialTheme.typography.bodyLarge,
-                    fontWeight = FontWeight.Bold,
-                    color = if (task.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2
-                )
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = task.description,
+                        modifier = Modifier.weight(1f),
+                        style = MaterialTheme.typography.bodyLarge,
+                        fontWeight = FontWeight.Bold,
+                        color = if (task.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                    )
+                    if (!task.isDone) {
+                        PriorityBadge(priority = task.priority)
+                    }
+                }
                 task.deadline?.let {
                     Text(
                         text = "Due: ${dateFormat.format(Date(it))}",
