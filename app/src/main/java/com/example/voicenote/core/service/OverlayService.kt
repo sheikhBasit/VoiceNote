@@ -41,6 +41,11 @@ import androidx.savedstate.setViewTreeSavedStateRegistryOwner
 import com.example.voicenote.MainActivity
 import com.example.voicenote.data.repository.FirestoreRepository
 import com.example.voicenote.ui.theme.VoiceNoteTheme
+import com.example.voicenote.ui.components.RecordingButton
+import com.example.voicenote.ui.components.GlassCard
+import com.example.voicenote.ui.theme.GlassBackground
+import com.example.voicenote.ui.theme.GlassBorder
+import androidx.compose.ui.draw.blur
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.util.*
@@ -121,37 +126,26 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
                             verticalAlignment = Alignment.CenterVertically,
                             modifier = Modifier
                                 .padding(8.dp)
-                                .clip(RoundedCornerShape(30.dp))
-                                .background(Color.Gray.copy(alpha = 0.6f))
+                                .clip(RoundedCornerShape(32.dp))
+                                .background(GlassBackground)
+                                .border(1.dp, GlassBorder, RoundedCornerShape(32.dp))
                                 .padding(4.dp)
                         ) {
-                            Box(
-                                modifier = Modifier
-                                    .size(48.dp)
-                                    .clip(CircleShape)
-                                    .background(
-                                        if (isRecording) Color.Red.copy(alpha = 0.8f) 
-                                        else Color.DarkGray.copy(alpha = 0.8f)
-                                    ),
-                                contentAlignment = Alignment.Center
-                            ) {
-                                Icon(
-                                    if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                                    contentDescription = null,
-                                    tint = Color.White
-                                )
-                            }
+                            RecordingButton(
+                                isRecording = isRecording,
+                                onClick = { toggleRecording() }
+                            )
 
                             AnimatedVisibility(
                                 visible = isExpanded,
                                 enter = expandHorizontally(),
                                 exit = shrinkHorizontally()
                             ) {
-                                Row(modifier = Modifier.padding(horizontal = 8.dp)) {
+                                Row(modifier = Modifier.padding(horizontal = 12.dp)) {
                                     ShortcutIcon(Icons.Default.Checklist) { launchApp("tasks"); isExpandedState.value = false }
-                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Spacer(modifier = Modifier.width(16.dp))
                                     ShortcutIcon(Icons.Default.Description) { launchApp("notes"); isExpandedState.value = false }
-                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Spacer(modifier = Modifier.width(16.dp))
                                     ShortcutIcon(Icons.Default.Settings) { launchApp("settings"); isExpandedState.value = false }
                                 }
                             }
@@ -226,13 +220,14 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
     private fun ShortcutIcon(icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
         Box(
             modifier = Modifier
-                .size(40.dp)
+                .size(44.dp)
                 .clip(CircleShape)
-                .background(Color.LightGray.copy(alpha = 0.4f))
+                .background(GlassBackground)
+                .border(1.dp, GlassBorder, CircleShape)
                 .clickable { onClick() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = Color.White)
         }
     }
 

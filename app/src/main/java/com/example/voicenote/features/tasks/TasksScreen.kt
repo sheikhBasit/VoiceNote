@@ -35,12 +35,14 @@ import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import com.example.voicenote.ui.components.GlassCard
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun TasksScreen(
     viewModel: TasksViewModel = viewModel(),
-    onTaskClick: (String) -> Unit = {}
+    onTaskClick: (String) -> Unit = {},
+    onSearchClick: () -> Unit = {}
 ) {
     val allTasks by viewModel.tasks.collectAsState()
     val doneTasks by viewModel.doneTasks.collectAsState()
@@ -124,16 +126,22 @@ fun TasksScreen(
                             }
                         }
                     )
-                    SearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        onSearch = {},
-                        active = false,
-                        onActiveChange = {},
-                        placeholder = { Text("Search tasks...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {}
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 16.dp, vertical = 8.dp)
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .clickable { onSearchClick() }
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ask V-RAG about your tasks...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
                 }
                 
                 if (!showDoneTasks) {
@@ -202,7 +210,7 @@ fun TaskBoardCard(
 ) {
     val dateFormat = remember { SimpleDateFormat("MMM dd, HH:mm", Locale.getDefault()) }
     
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .pointerInput(Unit) {
@@ -210,16 +218,9 @@ fun TaskBoardCard(
                     onLongPress = { onLongClick() },
                     onTap = { onClick() }
                 )
-            },
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer 
-                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        ),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 2.dp),
-        border = if (isSelected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+            }
     ) {
         Row(
-            modifier = Modifier.padding(16.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
             Checkbox(
@@ -249,6 +250,16 @@ fun TaskBoardCard(
                     )
                 }
             }
+        }
+        
+        if (isSelected) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
         }
     }
 }

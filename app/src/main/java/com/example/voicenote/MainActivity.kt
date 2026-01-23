@@ -46,6 +46,7 @@ import com.example.voicenote.features.detail.NoteDetailScreen
 import com.example.voicenote.features.home.HomeScreen
 import com.example.voicenote.features.settings.ApiSettingsScreen
 import com.example.voicenote.features.tasks.TasksScreen
+import com.example.voicenote.features.search.SearchScreen
 import com.example.voicenote.ui.theme.VoiceNoteTheme
 import kotlinx.coroutines.launch
 import java.io.File
@@ -211,10 +212,21 @@ class MainActivity : AppCompatActivity() {
             }
         ) { innerPadding ->
             NavHost(navController, startDestination = "tasks", Modifier.padding(innerPadding)) {
-                composable("tasks") { TasksScreen(onTaskClick = { noteId -> navController.navigate("detail/$noteId") }) }
-                composable("notes") { HomeScreen(onNoteClick = { note -> navController.navigate("detail/${note.id}") }) }
+                composable("tasks") { 
+                    TasksScreen(
+                        onTaskClick = { noteId -> navController.navigate("detail/$noteId") },
+                        onSearchClick = { navController.navigate("search") }
+                    ) 
+                }
+                composable("notes") { 
+                    HomeScreen(
+                        onNoteClick = { note -> navController.navigate("detail/${note.id}") },
+                        onSearchClick = { navController.navigate("search") }
+                    ) 
+                }
                 composable("stt_logs") { SttLogsScreen() }
                 composable("settings") { ApiSettingsScreen() }
+                composable("search") { SearchScreen(onDismiss = { navController.popBackStack() }) }
                 composable("detail/{noteId}") { backStackEntry ->
                     val noteId = backStackEntry.arguments?.getString("noteId") ?: ""
                     NoteDetailScreen(noteId = noteId, onBack = { navController.popBackStack() })

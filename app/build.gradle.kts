@@ -6,12 +6,21 @@ plugins {
 
 android {
     namespace = "com.example.voicenote"
-    compileSdk = 36
+    compileSdk = 35
+
+    signingConfigs {
+        create("release") {
+            storeFile = file("/home/basitdev/StudioProjects/voicenote_keystore.jks")
+            storePassword = "aka@gami3397"
+            keyAlias = "key1"
+            keyPassword = "aka@gami3397"
+        }
+    }
 
     defaultConfig {
         applicationId = "com.example.voicenote"
         minSdk = 23
-        targetSdk = 36
+        targetSdk = 35
         versionCode = 1
         versionName = "1.0"
 
@@ -20,11 +29,16 @@ android {
 
     buildTypes {
         release {
-            isMinifyEnabled = false
+            isMinifyEnabled = true
+            isShrinkResources = true
+            signingConfig = signingConfigs.getByName("release")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+        }
+        debug {
+            isMinifyEnabled = false
         }
     }
     compileOptions {
@@ -75,6 +89,7 @@ dependencies {
     // Retrofit for Groq API
     implementation("com.squareup.retrofit2:retrofit:2.11.0")
     implementation("com.squareup.retrofit2:converter-gson:2.11.0")
+    implementation("com.google.code.gson:gson:2.11.0")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation("com.squareup.okhttp3:logging-interceptor:4.12.0")
 

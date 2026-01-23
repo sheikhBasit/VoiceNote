@@ -43,13 +43,15 @@ class VoiceRecordingService : Service() {
     private var currentMeetingTitle: String? = null
 
     private val SILENCE_THRESHOLD = 800 
-    private val VAD_CHECK_INTERVAL = 1000L 
+    private val VAD_CHECK_INTERVAL = 50L 
 
     private val vadRunnable = object : Runnable {
         override fun run() {
             if (mediaRecorder != null && isRecording.value) {
-                val amplitude = try { mediaRecorder?.maxAmplitude ?: 0 } catch (e: Exception) { 0 }
-                if (amplitude < SILENCE_THRESHOLD && !isPausedBySilence) {
+                val amp = try { mediaRecorder?.maxAmplitude ?: 0 } catch (e: Exception) { 0 }
+                _amplitude.value = amp
+                
+                if (amp < SILENCE_THRESHOLD && !isPausedBySilence) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         try {
                             mediaRecorder?.pause()
@@ -82,6 +84,9 @@ class VoiceRecordingService : Service() {
         
         private val _statusLog = MutableStateFlow<String>("Idle")
         val statusLog: StateFlow<String> = _statusLog
+
+        private val _amplitude = MutableStateFlow(0)
+        val amplitude: StateFlow<Int> = _amplitude
 
         private val _lastRecordedFilePath = MutableStateFlow<String?>(null)
         val lastRecordedFilePath: StateFlow<String?> = _lastRecordedFilePath

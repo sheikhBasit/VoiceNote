@@ -14,6 +14,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.outlined.FavoriteBorder
 import androidx.compose.material3.*
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
@@ -34,12 +35,15 @@ import com.example.voicenote.data.model.Note
 import com.example.voicenote.data.model.Priority
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import com.example.voicenote.ui.components.GlassCard
+import com.example.voicenote.ui.components.RecordingButton
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel = viewModel(),
-    onNoteClick: (Note) -> Unit = {}
+    onNoteClick: (Note) -> Unit = {},
+    onSearchClick: () -> Unit = {}
 ) {
     val notes by viewModel.notesState.collectAsState()
     val scope = rememberCoroutineScope()
@@ -129,18 +133,22 @@ fun HomeScreen(
                             }
                         }
                     )
-                    SearchBar(
-                        query = searchQuery,
-                        onQueryChange = { searchQuery = it },
-                        onSearch = {},
-                        active = false,
-                        onActiveChange = {},
-                        placeholder = { Text("Search notes...") },
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+                    Box(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                    ) {}
+                            .clip(RoundedCornerShape(32.dp))
+                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
+                            .clickable { onSearchClick() }
+                            .padding(16.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Spacer(Modifier.width(8.dp))
+                            Text("Ask V-RAG about your notes...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                    }
+
                 }
             }
         },
@@ -264,44 +272,7 @@ fun EmptyStateUI() {
     }
 }
 
-@Composable
-fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
-    val infiniteTransition = rememberInfiniteTransition(label = "pulse")
-    val scale by infiniteTransition.animateFloat(
-        initialValue = 1f,
-        targetValue = if (isRecording) {
-            1.2f
-        } else {
-            1f
-        },
-        animationSpec = infiniteRepeatable(
-            animation = tween(1000, easing = FastOutSlowInEasing),
-            repeatMode = RepeatMode.Reverse
-        ), label = "scale"
-    )
 
-    Box(contentAlignment = Alignment.Center) {
-        if (isRecording) {
-            Box(
-                modifier = Modifier
-                    .size(56.dp)
-                    .scale(scale)
-                    .background(MaterialTheme.colorScheme.error.copy(alpha = 0.3f), CircleShape)
-            )
-        }
-        SmallFloatingActionButton(
-            onClick = onClick,
-            containerColor = if (isRecording) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.secondaryContainer,
-            contentColor = if (isRecording) MaterialTheme.colorScheme.onError else MaterialTheme.colorScheme.onSecondaryContainer,
-            shape = CircleShape
-        ) {
-            Icon(
-                if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
-                contentDescription = if (isRecording) "Stop" else "Voice Note"
-            )
-        }
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -315,6 +286,7 @@ fun SwipeableNoteItem(
     var isDismissed by remember { mutableStateOf(false) }
     
     if (!isDismissed) {
+        val context = LocalContext.current
         val dismissState = rememberSwipeToDismissBoxState(
             confirmValueChange = { direction ->
                 when (direction) {
@@ -324,7 +296,20 @@ fun SwipeableNoteItem(
                         true
                     }
                     SwipeToDismissBoxValue.StartToEnd -> {
-                        onOpen()
+                        val whatsappIntent = Intent(Intent.ACTION_SEND).apply {
+                            type = "text/plain"
+                            `package` = "com.whatsapp"
+                            putExtra(Intent.EXTRA_TEXT, "Note Summary: ${note.summary}\n\nDrafted via VoiceNote AI")
+                        }
+                        try {
+                            context.startActivity(whatsappIntent)
+                        } catch (e: Exception) {
+                            val genericIntent = Intent(Intent.ACTION_SEND).apply {
+                                type = "text/plain"
+                                putExtra(Intent.EXTRA_TEXT, "Note Summary: ${note.summary}\n\nDrafted via VoiceNote AI")
+                            }
+                            context.startActivity(Intent.createChooser(genericIntent, "Share note via"))
+                        }
                         false // Snap back
                     }
                     else -> false
@@ -338,7 +323,7 @@ fun SwipeableNoteItem(
                 val color by animateColorAsState(
                     when (dismissState.targetValue) {
                         SwipeToDismissBoxValue.EndToStart -> Color(0xFFFFCDD2) // Light Red
-                        SwipeToDismissBoxValue.StartToEnd -> MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.4f)
+                        SwipeToDismissBoxValue.StartToEnd -> Color(0xFF25D366).copy(alpha = 0.4f) // WhatsApp Green
                         else -> Color.Transparent
                     }, label = "dismiss_color"
                 )
@@ -350,7 +335,13 @@ fun SwipeableNoteItem(
                     contentAlignment = if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) Alignment.CenterStart else Alignment.CenterEnd
                 ) {
                     if (dismissState.targetValue == SwipeToDismissBoxValue.StartToEnd) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimaryContainer)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.AutoMirrored.Filled.Send, contentDescription = null, tint = Color.White)
+                            Spacer(Modifier.width(8.dp))
+                            Text("WhatsApp Draft", color = Color.White, fontWeight = FontWeight.Bold)
+                        }
+                    } else if (dismissState.targetValue == SwipeToDismissBoxValue.EndToStart) {
+                        Icon(Icons.Default.Delete, contentDescription = null, tint = Color.Red)
                     }
                 }
             },
@@ -373,7 +364,7 @@ fun NoteCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
-    Card(
+    GlassCard(
         modifier = Modifier
             .fillMaxWidth()
             .pointerInput(Unit) {
@@ -381,43 +372,49 @@ fun NoteCard(
                     onLongPress = { onLongClick() },
                     onTap = { onClick() }
                 )
-            },
-        shape = RoundedCornerShape(12.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = if (isSelected) 8.dp else 2.dp),
-        colors = CardDefaults.cardColors(
-            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer
-                             else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        ),
-        border = if (isSelected) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+            }
     ) {
-        Column(modifier = Modifier.padding(16.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                if (note.isPinned) {
-                    Icon(Icons.Default.PushPin, contentDescription = "Pinned", modifier = Modifier.size(16.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                }
-                Text(
-                    text = note.title,
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    modifier = Modifier.weight(1f)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            if (note.isPinned) {
+                Icon(
+                    Icons.Default.PushPin, 
+                    contentDescription = "Pinned", 
+                    modifier = Modifier.size(16.dp), 
+                    tint = MaterialTheme.colorScheme.primary
                 )
-                if (note.isLiked) {
-                    Icon(Icons.Default.Favorite, contentDescription = "Liked", modifier = Modifier.size(16.dp), tint = Color.Red)
-                }
+                Spacer(Modifier.width(8.dp))
             }
-            if (note.summary.isNotEmpty()) {
-                Spacer(modifier = Modifier.height(4.dp))
-                Text(
-                    text = note.summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 2,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
+            Text(
+                text = note.title,
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier.weight(1f)
+            )
+            if (note.isLiked) {
+                Icon(Icons.Default.Favorite, contentDescription = "Liked", modifier = Modifier.size(16.dp), tint = Color.Red)
             }
+        }
+        if (note.summary.isNotEmpty()) {
+            Spacer(modifier = Modifier.height(4.dp))
+            Text(
+                text = note.summary,
+                style = MaterialTheme.typography.bodyMedium,
+                maxLines = 2,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+        Spacer(modifier = Modifier.height(8.dp))
+        PriorityBadge(priority = note.priority)
+        
+        if (isSelected) {
             Spacer(modifier = Modifier.height(8.dp))
-            PriorityBadge(priority = note.priority)
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .height(2.dp)
+                    .background(MaterialTheme.colorScheme.primary)
+            )
         }
     }
 }
