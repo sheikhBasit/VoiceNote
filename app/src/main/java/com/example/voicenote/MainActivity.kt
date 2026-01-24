@@ -52,19 +52,31 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.Executor
 
+import dagger.hilt.android.AndroidEntryPoint
+import javax.inject.Inject
+
+@AndroidEntryPoint
 class MainActivity : AppCompatActivity() {
     private lateinit var executor: Executor
     private lateinit var biometricPrompt: BiometricPrompt
     private lateinit var promptInfo: BiometricPrompt.PromptInfo
     private lateinit var securityManager: SecurityManager
-    private val repository = FirestoreRepository()
+    
+    @Inject
+    lateinit var repository: VoiceNoteRepository
     private var mediaPlayer: MediaPlayer? = null
+
+    @Inject
+    lateinit var webSocketManager: com.example.voicenote.core.network.WebSocketManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         executor = ContextCompat.getMainExecutor(this)
         securityManager = SecurityManager(this)
+        
+        // Start Real-time Pulse
+        webSocketManager.connect()
         
         ReminderWorker.schedule(this)
         
@@ -87,39 +99,45 @@ class MainActivity : AppCompatActivity() {
                         startService(Intent(this, OverlayService::class.java))
                     }
                 } else {
-                    Toast.makeText(this, "Permissions required", Toast.LENGTH_LONG).show()
+                    Toast.makeText(this, "Permissions restricted: To proceed with voice recording and synchronization, please grant the necessary permissions in System Settings.", Toast.LENGTH_LONG).show()
                 }
             }
 
             LaunchedEffect(Unit) {
-                permissionsLauncher.launch(arrayOf(
+                val permissions = mutableListOf(
                     Manifest.permission.RECORD_AUDIO,
                     Manifest.permission.POST_NOTIFICATIONS,
-                    Manifest.permission.ACCESS_FINE_LOCATION,
-                    Manifest.permission.ACCESS_COARSE_LOCATION,
                     Manifest.permission.READ_CALENDAR,
                     Manifest.permission.WRITE_CALENDAR,
                     Manifest.permission.READ_CONTACTS,
                     Manifest.permission.CALL_PHONE,
                     Manifest.permission.CAMERA,
                     "com.android.alarm.permission.SET_ALARM"
-                ))
+                )
+                permissionsLauncher.launch(permissions.toTypedArray())
             }
 
-            VoiceNoteTheme {
-                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    if (isAuthenticated) {
-                        val navToNoteId = intent.getStringExtra("note_id_to_open")
-                        AppNavigation(navToNoteId)
-                    } else {
-                        AuthScreen { 
-                            showBiometricPrompt { 
-                                securityManager.setBypassedOnce(true)
-                                isAuthenticated = true 
-                                handleUserRegistration(deviceId)
-                            } 
-                        }
+    VoiceNoteTheme {
+        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            if (isAuthenticated) {
+                val navController = rememberNavController()
+                com.example.voicenote.ui.navigation.AppNavigation(navController)
+                
+                // Handle deep-link
+                LaunchedEffect(intent.getStringExtra("note_id_to_open")) {
+                    intent.getStringExtra("note_id_to_open")?.let {
+                        navController.navigate("detail/$it")
                     }
+                }
+            } else {
+                com.example.voicenote.features.auth.PremiumAuthScreen { 
+                    showBiometricPrompt { 
+                        securityManager.setBypassedOnce(true)
+                        isAuthenticated = true 
+                        handleUserRegistration(deviceId)
+                    } 
+                }
+            }
 
                     if (showOverlayDialog) {
                         AlertDialog(
@@ -166,74 +184,7 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    @Composable
-    fun AppNavigation(initialNoteId: String? = null) {
-        val navController = rememberNavController()
-        val items = listOf("tasks", "notes", "stt_logs", "settings")
-
-        // Handle deep-link navigation if noteId is passed from notification
-        LaunchedEffect(initialNoteId) {
-            initialNoteId?.let {
-                navController.navigate("detail/$it")
-            }
-        }
-
-        Scaffold(
-            bottomBar = {
-                NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
-                    val navBackStackEntry by navController.currentBackStackEntryAsState()
-                    val currentDestination = navBackStackEntry?.destination
-                    
-                    items.forEach { screen ->
-                        NavigationBarItem(
-                            icon = { 
-                                Icon(
-                                    when(screen) {
-                                        "notes" -> Icons.Default.Description
-                                        "tasks" -> Icons.Default.Checklist
-                                        "stt_logs" -> Icons.Default.Mic
-                                        else -> Icons.Default.Settings
-                                    },
-                                    contentDescription = screen
-                                )
-                            },
-                            label = { Text(screen.replaceFirstChar { it.uppercase() }) },
-                            selected = currentDestination?.hierarchy?.any { it.route == screen } == true,
-                            onClick = {
-                                navController.navigate(screen) {
-                                    popUpTo("tasks") { saveState = true }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        )
-                    }
-                }
-            }
-        ) { innerPadding ->
-            NavHost(navController, startDestination = "tasks", Modifier.padding(innerPadding)) {
-                composable("tasks") { 
-                    TasksScreen(
-                        onTaskClick = { noteId -> navController.navigate("detail/$noteId") },
-                        onSearchClick = { navController.navigate("search") }
-                    ) 
-                }
-                composable("notes") { 
-                    HomeScreen(
-                        onNoteClick = { note -> navController.navigate("detail/${note.id}") },
-                        onSearchClick = { navController.navigate("search") }
-                    ) 
-                }
-                composable("stt_logs") { SttLogsScreen() }
-                composable("settings") { ApiSettingsScreen() }
-                composable("search") { SearchScreen(onDismiss = { navController.popBackStack() }) }
-                composable("detail/{noteId}") { backStackEntry ->
-                    val noteId = backStackEntry.arguments?.getString("noteId") ?: ""
-                    NoteDetailScreen(noteId = noteId, onBack = { navController.popBackStack() })
-                }
-            }
-        }
-    }
+    // Navigation is now handled by com.example.voicenote.ui.navigation.AppNavigation
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
@@ -288,7 +239,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val file = File(path)
             if (!file.exists()) {
-                Toast.makeText(this, "File not found at: $path", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "Resource unavailable: The requested audio file could not be located on this device.", Toast.LENGTH_SHORT).show()
                 return
             }
             mediaPlayer?.release()
@@ -299,7 +250,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e("Playback", "Error playing: $path", e)
-            Toast.makeText(this, "Playback error: ${e.message}", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Playback interrupted: We encountered an unexpected error while playing the audio. Please try again.", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -334,5 +285,19 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         mediaPlayer?.release()
+    }
+}
+
+// Utility to open other apps
+fun openApp(context: android.content.Context, packageName: String) {
+    val intent = context.packageManager.getLaunchIntentForPackage(packageName)
+    if (intent != null) {
+        context.startActivity(intent)
+    } else {
+        try {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
+        } catch (e: Exception) {
+            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName")))
+        }
     }
 }

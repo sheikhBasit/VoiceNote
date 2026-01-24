@@ -14,18 +14,20 @@ import com.example.voicenote.data.model.Priority
 @Composable
 fun PriorityBadge(priority: Priority) {
     val color = when (priority) {
-        Priority.HIGH -> Color(0xFFFF5252)
-        Priority.MEDIUM -> Color(0xFFFFAB40)
-        Priority.LOW -> Color(0xFF69F0AE)
+        Priority.HIGH -> Color(0xFFFF3D00)
+        Priority.MEDIUM -> Color(0xFFFFD600)
+        Priority.LOW -> Color(0xFF00E676)
     }
     Surface(
-        color = color.copy(alpha = 0.1f),
-        shape = RoundedCornerShape(4.dp)
+        color = color.copy(alpha = 0.15f),
+        shape = RoundedCornerShape(8.dp),
+        border = androidx.compose.foundation.BorderStroke(0.5.dp, color.copy(alpha = 0.3f))
     ) {
         Text(
             text = priority.name,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp),
             style = MaterialTheme.typography.labelSmall,
+            fontWeight = androidx.compose.ui.text.font.FontWeight.Bold,
             color = color
         )
     }

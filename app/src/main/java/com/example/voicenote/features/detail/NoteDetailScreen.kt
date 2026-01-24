@@ -45,6 +45,8 @@ import com.example.voicenote.data.repository.AiRepository
 import com.example.voicenote.data.repository.FirestoreRepository
 import com.example.voicenote.ui.theme.PendingColor
 import com.example.voicenote.ui.theme.PriorityHigh
+import com.example.voicenote.ui.components.GlassCard
+import com.example.voicenote.ui.components.GlassTabRow
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
@@ -52,32 +54,60 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.abs
 
-class NoteDetailViewModel(
+class NoteDetailViewModel @javax.inject.Inject constructor(
     private val noteId: String,
-    private val repository: FirestoreRepository = FirestoreRepository(),
-    private val aiRepository: AiRepository = AiRepository(repository)
+    private val repository: com.example.voicenote.data.repository.VoiceNoteRepository
 ) : ViewModel() {
-    val note: StateFlow<Note?> = repository.getNoteById(noteId)
+    private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1)
+    
+    val note: StateFlow<Note?> = refreshTrigger
+        .flatMapLatest { repository.getNote(noteId) }
+        .map { it.getOrNull() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
-    val tasks: StateFlow<List<Task>> = repository.getTasksForNote(noteId)
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val allActiveTasks: StateFlow<List<Task>> = repository.getAllTasks()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    private val _aiResponse = MutableStateFlow<String?>(null)
-    val aiResponse: StateFlow<String?> = _aiResponse.asStateFlow()
-
-    private val _isProcessingAi = MutableStateFlow(false)
-    val isProcessingAi: StateFlow<Boolean> = _isProcessingAi.asStateFlow()
+    init {
+        refreshTrigger.tryEmit(Unit)
+        
+        viewModelScope.launch {
+            repository.observeTaskStatus("").collect { update ->
+                if (update.noteId == noteId && update.status == "DONE") {
+                    refreshTrigger.emit(Unit)
+                }
+            }
+        }
+        
+        // Listen for AI Responses specifically
+        viewModelScope.launch {
+            (webSocketManager as? com.example.voicenote.core.network.WebSocketManager)?.updates?.collect { event ->
+                if (event["type"] == "AI_RESPONSE") {
+                    val data = event["data"] as? Map<*, *>
+                    val answer = data?.get("answer") as? String
+                    if (answer != null) {
+                        _aiResponse.value = answer
+                        _isProcessingAi.value = false
+                    }
+                }
+            }
+        }
+    }
 
     fun askAi(question: String) {
-        val currentNote = note.value ?: return
+        val currentBalance = (refreshTrigger as? StateFlow<*>)?.let { 100 } ?: 100 // Logic to check wallet
+        // In production, we'd check the balance from a repository StateFlow or local cache
+        
         viewModelScope.launch {
             _isProcessingAi.value = true
-            _aiResponse.value = aiRepository.askAssistant(currentNote, question)
-            _isProcessingAi.value = false
+            _aiResponse.value = "AI Brain is analyzing your request..."
+            repository.askAI(noteId, question).collect { result ->
+                result.onFailure {
+                    if (it.message?.contains("402") == true) {
+                        _aiResponse.value = "Insufficient Credits: Please refill your wallet to continue using Advanced AI features."
+                    } else {
+                        _aiResponse.value = "AI Error: ${it.message}"
+                    }
+                }
+                _isProcessingAi.value = false
+            }
         }
     }
 
@@ -208,15 +238,11 @@ fun NoteDetailScreen(
     ) { padding ->
         note?.let { currentNote ->
             Column(modifier = Modifier.padding(padding)) {
-                TabRow(selectedTabIndex = selectedTabIndex) {
-                    tabs.forEachIndexed { index, title ->
-                        Tab(
-                            selected = selectedTabIndex == index,
-                            onClick = { selectedTabIndex = index },
-                            text = { Text(title) }
-                        )
-                    }
-                }
+                GlassTabRow(
+                    selectedTabIndex = selectedTabIndex,
+                    tabs = tabs,
+                    onTabSelected = { selectedTabIndex = it }
+                )
 
                 Box(modifier = Modifier.fillMaxSize().padding(16.dp)) {
                     when (selectedTabIndex) {
@@ -254,7 +280,7 @@ fun NoteDetailScreen(
                 onDismissRequest = { speakerToRename = null },
                 title = { Text("Rename Speaker") },
                 text = {
-                    OutlinedTextField(value = newName, onValueChange = { newName = it }, label = { Text("New Name") })
+                    GlassyTextField(value = newName, onValueChange = { newName = it }, label = "New Name")
                 },
                 confirmButton = {
                     Button(onClick = {
@@ -302,18 +328,20 @@ fun SummaryTab(
                     }
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(text = note.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-                    PriorityBadge(priority = note.priority)
-                    SuggestionChip(
-                        onClick = {}, 
-                        label = { Text(note.status.name) },
-                        colors = SuggestionChipDefaults.suggestionChipColors(
-                            containerColor = if (note.status == NoteStatus.PENDING) PendingColor.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surface,
-                            labelColor = if (note.status == NoteStatus.PENDING) PendingColor else MaterialTheme.colorScheme.onSurface
+                GlassCard(intensity = 0.8f) {
+                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text(text = note.title, style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold, color = Color.White)
+                        PriorityBadge(priority = note.priority)
+                        SuggestionChip(
+                            onClick = {}, 
+                            label = { Text(note.status.name) },
+                            colors = SuggestionChipDefaults.suggestionChipColors(
+                                containerColor = if (note.status == NoteStatus.PENDING) PendingColor.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f),
+                                labelColor = if (note.status == NoteStatus.PENDING) PendingColor else Color.White
+                            )
                         )
-                    )
-                    Text(text = note.summary, style = MaterialTheme.typography.bodyLarge)
+                        Text(text = note.summary, style = MaterialTheme.typography.bodyLarge, color = Color.White.copy(alpha = 0.8f))
+                    }
                 }
             }
         }
@@ -361,9 +389,9 @@ fun AudioPlayer(audioUrl: String) {
         }
     }
 
-    Card(
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.3f))
+        intensity = 0.5f
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -377,7 +405,8 @@ fun AudioPlayer(audioUrl: String) {
                 }) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = null
+                        contentDescription = null,
+                        tint = Color(0xFF00E5FF)
                     )
                 }
                 
@@ -388,12 +417,16 @@ fun AudioPlayer(audioUrl: String) {
                         mediaPlayer?.seekTo(it.toInt())
                     },
                     valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
+                    colors = SliderDefaults.colors(
+                        thumbColor = Color(0xFF00E5FF),
+                        activeTrackColor = Color(0xFF00E5FF)
+                    )
                 )
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text(formatTime(currentPosition), style = MaterialTheme.typography.labelSmall)
-                Text(formatTime(duration), style = MaterialTheme.typography.labelSmall)
+                Text(formatTime(currentPosition), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+                Text(formatTime(duration), style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
             }
         }
     }
@@ -479,24 +512,33 @@ fun TasksTab(tasks: List<Task>, allActiveTasks: List<Task>, viewModel: NoteDetai
 fun AskAiTab(response: String?, isProcessing: Boolean, onAsk: (String) -> Unit) {
     var question by remember { mutableStateOf("") }
     Column(modifier = Modifier.fillMaxSize()) {
-        OutlinedTextField(
+        GlassyTextField(
             value = question, 
             onValueChange = { question = it },
             modifier = Modifier.fillMaxWidth(),
-            label = { Text("Ask about this note...") },
-            trailingIcon = {
-                IconButton(onClick = { if (question.isNotBlank()) onAsk(question) }) {
-                    Icon(Icons.AutoMirrored.Filled.Send, contentDescription = "Ask")
-                }
-            }
+            label = "Ask about this note...",
+            keyboardOptions = KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Send)
         )
+        
         Spacer(modifier = Modifier.height(16.dp))
-        if (isProcessing) {
-            LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+        
+        Button(
+            onClick = { if (question.isNotBlank()) onAsk(question) },
+            modifier = Modifier.fillMaxWidth(),
+            enabled = !isProcessing && question.isNotBlank()
+        ) {
+            if (isProcessing) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White, strokeWidth = 2.dp)
+            else Text("Consult AI Brain")
         }
+
+        Spacer(modifier = Modifier.height(16.dp))
         response?.let {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(text = it, modifier = Modifier.padding(16.dp), style = MaterialTheme.typography.bodyMedium)
+                Row(modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)) {
+                    IconButton(onClick = { shareText(context, it) }) { Icon(Icons.Default.Share, "Share Answer") }
+                    IconButton(onClick = { sendEmail(context, it, "AI Answer") }) { Icon(Icons.Default.Email, "Email Answer") }
+                }
             }
         }
     }
@@ -519,32 +561,32 @@ fun TaskDetailCard(task: Task, hasConflict: Boolean, onToggle: () -> Unit, onEdi
         }
     }
 
-    Card(
-        onClick = onEdit,
+    GlassCard(
         modifier = Modifier.fillMaxWidth(),
-        colors = CardDefaults.cardColors(
-            containerColor = if (task.priority == Priority.HIGH) Color(0xFF4527A0).copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-        ),
-        border = if (hasConflict) BorderStroke(1.dp, Color.Yellow) else null
+        intensity = if (task.priority == Priority.HIGH) 1.2f else 0.8f
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
             if (hasConflict) {
                 Text("⚠️ Deadline Conflict Detected", style = MaterialTheme.typography.labelSmall, color = Color.Yellow)
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(checked = task.isDone, onCheckedChange = { onToggle() })
+                Checkbox(
+                    checked = task.isDone, 
+                    onCheckedChange = { onToggle() },
+                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E5FF))
+                )
                 Column(modifier = Modifier.weight(1f)) {
-                    Text(text = task.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold)
+                    Text(text = task.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color.White)
                     PriorityBadge(priority = task.priority)
                 }
             }
             if (isOverdue) Text("OVERDUE", color = Color.Red, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
             task.deadline?.let { 
                 Row {
-                    Text("Due: ${dateFormat.format(Date(it))}", style = MaterialTheme.typography.labelSmall)
+                    Text("Due: ${dateFormat.format(Date(it))}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
                     if (!task.isDone && !isOverdue) {
                         Spacer(Modifier.width(8.dp))
-                        Text(text = "($timeToDeadline)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                        Text(text = "($timeToDeadline)", style = MaterialTheme.typography.labelSmall, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
                     }
                 }
             }
@@ -572,7 +614,11 @@ fun TaskDetailCard(task: Task, hasConflict: Boolean, onToggle: () -> Unit, onEdi
                     }
                 }
                 if (task.assignedContactPhone != null && !task.isActionApproved) {
-                    Button(onClick = onApprove, modifier = Modifier.fillMaxWidth().padding(top = 8.dp)) {
+                    Button(
+                        onClick = onApprove, 
+                        modifier = Modifier.fillMaxWidth().padding(top = 8.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00E5FF), contentColor = Color.Black)
+                    ) {
                         Text("Approve ${task.communicationType} to ${task.assignedContactName}")
                     }
                 }
@@ -594,18 +640,35 @@ private fun shareRecap(context: Context, note: Note?, tasks: List<Task>) {
     if (note == null) return
     val taskList = tasks.joinToString("\n") { "- [${if (it.isDone) "x" else " "}] ${it.description} (${it.priority})" }
     val text = "Recap: ${note.title}\nPriority: ${note.priority}\n\nSummary:\n${note.summary}\n\nTasks:\n$taskList"
+    shareText(context, text, "Meeting Recap: ${note.title}")
+}
+
+private fun shareText(context: Context, text: String, subject: String? = null) {
     val intent = Intent(Intent.ACTION_SEND).apply {
         type = "text/plain"
-        putExtra(Intent.EXTRA_SUBJECT, "Meeting Recap: ${note.title}")
+        subject?.let { putExtra(Intent.EXTRA_SUBJECT, it) }
         putExtra(Intent.EXTRA_TEXT, text)
     }
-    context.startActivity(Intent.createChooser(intent, "Share Meeting Recap"))
+    context.startActivity(Intent.createChooser(intent, "Share"))
+}
+
+private fun sendEmail(context: Context, text: String, subject: String) {
+    val intent = Intent(Intent.ACTION_SENDTO).apply {
+        data = Uri.parse("mailto:")
+        putExtra(Intent.EXTRA_SUBJECT, subject)
+        putExtra(Intent.EXTRA_TEXT, text)
+    }
+    try {
+        context.startActivity(intent)
+    } catch (e: Exception) {
+        shareText(context, text, subject)
+    }
 }
 
 private fun copyAndOpen(context: Context, text: String, packageName: String, fallbackUrl: String) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
     clipboard.setPrimaryClip(ClipData.newPlainText("AI Prompt", text))
-    Toast.makeText(context, "Prompt copied!", Toast.LENGTH_SHORT).show()
+    Toast.makeText(context, "Draft successfully copied to clipboard.", Toast.LENGTH_SHORT).show()
     val intent = context.packageManager.getLaunchIntentForPackage(packageName)
     if (intent != null) context.startActivity(intent)
     else context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(fallbackUrl)))
@@ -639,8 +702,8 @@ fun EditTaskDialog(task: Task, contactManager: ContactManager, onDismiss: () -> 
         title = { Text("Edit Task") },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedTextField(value = description, onValueChange = { description = it }, label = { Text("Task") }, modifier = Modifier.fillMaxWidth())
-                OutlinedTextField(value = contactQuery, onValueChange = { contactQuery = it; selectedContact = null }, label = { Text("Assign to contact") }, modifier = Modifier.fillMaxWidth())
+                GlassyTextField(value = description, onValueChange = { description = it }, label = "Task")
+                GlassyTextField(value = contactQuery, onValueChange = { contactQuery = it; selectedContact = null }, label = "Assign to contact")
                 if (contactResults.isNotEmpty() && selectedContact == null) {
                     Card(modifier = Modifier.fillMaxWidth().heightIn(max = 150.dp)) {
                         LazyColumn { items(contactResults) { contact -> TextButton(onClick = { selectedContact = contact; contactQuery = contact.name }, modifier = Modifier.fillMaxWidth()) { Text("${contact.name} (${contact.phoneNumber})") } } }

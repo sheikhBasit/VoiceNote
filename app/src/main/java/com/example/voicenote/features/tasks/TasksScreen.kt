@@ -36,6 +36,7 @@ import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
 import com.example.voicenote.ui.components.GlassCard
+import com.example.voicenote.ui.components.GlassTabRow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -126,43 +127,34 @@ fun TasksScreen(
                             }
                         }
                     )
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(32.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                            .clickable { onSearchClick() }
-                            .padding(16.dp)
+                    AnimatedVisibility(
+                        visible = !isSelectionMode,
+                        enter = expandVertically() + fadeIn(),
+                        exit = shrinkVertically() + fadeOut()
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
-                            Spacer(Modifier.width(8.dp))
-                            Text("Ask V-RAG about your tasks...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        GlassCard(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(horizontal = 16.dp, vertical = 8.dp)
+                                .clickable { onSearchClick() },
+                            intensity = 0.5f
+                        ) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00E5FF))
+                                Spacer(Modifier.width(8.dp))
+                                Text("Ask V-RAG about your tasks...", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium)
+                            }
                         }
                     }
 
                 }
                 
                 if (!showDoneTasks) {
-                    TabRow(
+                    GlassTabRow(
                         selectedTabIndex = selectedTabIndex,
-                        containerColor = MaterialTheme.colorScheme.background,
-                        indicator = { tabPositions ->
-                            TabRowDefaults.SecondaryIndicator(
-                                Modifier.tabIndicatorOffset(tabPositions[selectedTabIndex]),
-                                color = tabColors[selectedTabIndex]
-                            )
-                        }
-                    ) {
-                        tabs.forEachIndexed { index, title ->
-                            Tab(
-                                selected = selectedTabIndex == index,
-                                onClick = { selectedTabIndex = index },
-                                text = { Text(title, color = if (selectedTabIndex == index) tabColors[index] else MaterialTheme.colorScheme.onSurfaceVariant) }
-                            )
-                        }
-                    }
+                        tabs = tabs,
+                        onTabSelected = { selectedTabIndex = it }
+                    )
                 }
             }
         }
@@ -213,12 +205,13 @@ fun TaskBoardCard(
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) {
+            .pointerInput(isSelected) {
                 detectTapGestures(
                     onLongPress = { onLongClick() },
                     onTap = { onClick() }
                 )
-            }
+            },
+        intensity = if (isSelected) 1.5f else 1.0f
     ) {
         Row(
             verticalAlignment = Alignment.CenterVertically
@@ -236,7 +229,7 @@ fun TaskBoardCard(
                         modifier = Modifier.weight(1f),
                         style = MaterialTheme.typography.bodyLarge,
                         fontWeight = FontWeight.Bold,
-                        color = if (task.isDone) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.onSurface
+                        color = if (task.isDone) Color.White.copy(alpha = 0.4f) else Color.White
                     )
                     if (!task.isDone) {
                         PriorityBadge(priority = task.priority)
@@ -246,7 +239,7 @@ fun TaskBoardCard(
                     Text(
                         text = "Due: ${dateFormat.format(Date(it))}",
                         style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        color = Color.White.copy(alpha = 0.6f)
                     )
                 }
             }
@@ -258,7 +251,7 @@ fun TaskBoardCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(2.dp)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(Color(0xFF00E5FF))
             )
         }
     }

@@ -42,15 +42,15 @@ fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
 
     Box(contentAlignment = Alignment.Center) {
         if (isRecording) {
-            // Outer Liquid Glow
+            // Layer 1: Base Flow
             Box(
                 modifier = Modifier
                     .size(64.dp)
-                    .scale(pulseScale + (animatedAmplitude * 0.5f))
+                    .scale(pulseScale + (animatedAmplitude * 0.4f))
                     .background(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color(0xFF00E5FF).copy(alpha = 0.4f),
+                                Color(0xFF00E5FF).copy(alpha = 0.3f),
                                 Color.Transparent
                             )
                         ),
@@ -58,12 +58,34 @@ fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
                     )
             )
             
-            // Middle Wave
+            // Layer 2: Rapid Ripple (Sync with Amplitude)
             Box(
                 modifier = Modifier
-                    .size(56.dp)
-                    .scale(1f + (animatedAmplitude * 0.8f))
-                    .border(1.5.dp, Color(0xFF00E5FF).copy(alpha = 0.6f), CircleShape)
+                    .size(60.dp)
+                    .scale(1f + (animatedAmplitude * 1.2f))
+                    .border(
+                        width = 1.dp,
+                        brush = Brush.linearGradient(
+                            colors = listOf(Color(0xFF00E5FF).copy(alpha = 0.5f), Color.Transparent)
+                        ),
+                        shape = CircleShape
+                    )
+            )
+
+            // Layer 3: Outer Glow
+            Box(
+                modifier = Modifier
+                    .size(72.dp)
+                    .scale(pulseScale * 1.1f)
+                    .background(
+                        brush = Brush.radialGradient(
+                            colors = listOf(
+                                Color(0xFF00E5FF).copy(alpha = 0.1f),
+                                Color.Transparent
+                            )
+                        ),
+                        shape = CircleShape
+                    )
             )
         }
         

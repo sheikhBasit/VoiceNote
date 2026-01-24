@@ -14,8 +14,6 @@ import androidx.core.app.NotificationCompat
 import com.example.voicenote.MainActivity
 import com.example.voicenote.core.utils.CalendarManager
 import com.example.voicenote.data.model.*
-import com.example.voicenote.data.repository.AiRepository
-import com.example.voicenote.data.repository.FirestoreRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -28,12 +26,14 @@ import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.util.*
 
+@dagger.hilt.android.AndroidEntryPoint
 class VoiceRecordingService : Service() {
 
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
-    private val repository = FirestoreRepository()
-    private val aiRepository = AiRepository(repository)
+    
+    // Injecting the new cross-platform repository
+    @Inject lateinit var repository: com.example.voicenote.data.repository.VoiceNoteRepository
     private lateinit var calendarManager: CalendarManager
 
     private var mediaRecorder: MediaRecorder? = null
@@ -56,7 +56,7 @@ class VoiceRecordingService : Service() {
                         try {
                             mediaRecorder?.pause()
                             isPausedBySilence = true
-                            _statusLog.value = "Sleeping (Silence detected)..."
+                            _statusLog.value = "Capture paused: Silence detected..."
                         } catch (e: Exception) { Log.e("VAD", "Pause failed") }
                     }
                 } else if (amplitude >= SILENCE_THRESHOLD && isPausedBySilence) {
@@ -64,7 +64,7 @@ class VoiceRecordingService : Service() {
                         try {
                             mediaRecorder?.resume()
                             isPausedBySilence = false
-                            _statusLog.value = "Recording Good Audio..."
+                            _statusLog.value = "Capture active: Priority audio detected..."
                         } catch (e: Exception) { Log.e("VAD", "Resume failed") }
                     }
                 }
@@ -90,9 +90,6 @@ class VoiceRecordingService : Service() {
 
         private val _lastRecordedFilePath = MutableStateFlow<String?>(null)
         val lastRecordedFilePath: StateFlow<String?> = _lastRecordedFilePath
-
-        private val _transcriptionHistory = MutableStateFlow<List<String>>(emptyList())
-        val transcriptionHistory: StateFlow<List<String>> = _transcriptionHistory
     }
 
     override fun onCreate() {
@@ -138,14 +135,14 @@ class VoiceRecordingService : Service() {
 
             enableAudioEffects()
             _isRecording.value = true
-            _statusLog.value = if (currentMeetingTitle != null) "Recording: $currentMeetingTitle" else "Recording Good Audio..."
+            _statusLog.value = if (currentMeetingTitle != null) "Archiving: $currentMeetingTitle" else "Capture active: Recording in progress..."
             isPausedBySilence = false
             handler.postDelayed(vadRunnable, VAD_CHECK_INTERVAL)
             triggerHapticFeedback(true)
             startForeground(NOTIFICATION_ID, createNotification("Capturing: ${currentMeetingTitle ?: "Meeting Voice"}"))
         } catch (e: Exception) {
             Log.e("VoiceRecordingService", "Failed to start recording", e)
-            _statusLog.value = "Error starting recording"
+            _statusLog.value = "System Error: Failed to initialize recording hardware."
             stopSelf()
         }
     }
@@ -190,7 +187,7 @@ class VoiceRecordingService : Service() {
         mediaRecorder = null
         _isRecording.value = false
         audioFile?.delete()
-        _statusLog.value = "Discarded."
+        _statusLog.value = "Recording discarded."
         triggerHapticFeedback(false)
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
             stopForeground(STOP_FOREGROUND_REMOVE)
@@ -216,95 +213,30 @@ class VoiceRecordingService : Service() {
             mediaRecorder = null
             _isRecording.value = false
             triggerHapticFeedback(false)
-            _statusLog.value = "Pre-processing Audio..."
+            _statusLog.value = "Optimizing audio payload..."
             _lastRecordedFilePath.value = audioFile?.absolutePath
 
-            serviceScope.launch(Dispatchers.IO) {
+            serviceScope.launch {
                 val file = audioFile ?: return@launch
+                _statusLog.value = "Synchronizing with AI Brain..."
                 
-                val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: Build.SERIAL
-                val user = repository.getUserByDeviceId(deviceId)
-                val role = user?.primaryRole ?: UserRole.GENERIC
-
-                val chunks = splitAudioByThreshold(file, 20 * 1024 * 1024)
-                val transcriptions = mutableListOf<String>()
-
-                chunks.forEachIndexed { index, chunk ->
-                    _statusLog.value = "Whisper Part ${index + 1}/${chunks.size}..."
-                    val text = aiRepository.transcribeAudio(chunk)
-                    if (!text.isNullOrBlank()) {
-                        transcriptions.add(text)
-                        val currentList = _transcriptionHistory.value.toMutableList()
-                        currentList.add(0, text)
-                        _transcriptionHistory.value = currentList.take(50)
-                    }
-                }
-
-                val totalTranscription = transcriptions.joinToString(" ").trim()
-                if (totalTranscription.length > 15) { 
-                    _statusLog.value = "AI Brain: Analyzing as ${role.name}..."
-                    
-                    val contextTranscription = if (currentMeetingTitle != null) {
-                        "CONTEXT: This is a recording of the meeting titled '$currentMeetingTitle'. \n\n$totalTranscription"
-                    } else totalTranscription
-
-                    val aiOutput = aiRepository.processConversationChunks(transcriptions, role)
-                    
-                    if (aiOutput != null) {
-                        val noteId = UUID.randomUUID().toString()
-                        val audioUrl = repository.uploadAudio(deviceId, file)
-                        
-                        val taskPriorities = aiOutput.tasks.map { 
-                            try { Priority.valueOf(it.priority.uppercase()) } catch (e: Exception) { Priority.MEDIUM }
-                        }
-                        val highestTaskPriority = taskPriorities.minByOrNull { it.ordinal } ?: Priority.LOW
-                        val llmNotePriority = try { Priority.valueOf(aiOutput.priority.uppercase()) } catch (e: Exception) { Priority.MEDIUM }
-                        val finalNotePriority = if (highestTaskPriority.ordinal < llmNotePriority.ordinal) highestTaskPriority else llmNotePriority
-
-                        repository.saveNote(Note(
-                            id = noteId,
-                            userId = deviceId,
-                            title = aiOutput.title,
-                            summary = aiOutput.summary,
-                            transcript = aiOutput.transcript,
-                            audioUrl = audioUrl ?: file.absolutePath, // Keep local path if upload fails
-                            priority = finalNotePriority,
-                            timestamp = System.currentTimeMillis()
-                        ))
-
-                        aiOutput.tasks.forEach { aiTask ->
-                            val deadlineMillis = parseDate(aiTask.deadline)
-                            repository.addTask(Task(
-                                noteId = noteId,
-                                description = aiTask.description,
-                                priority = try { Priority.valueOf(aiTask.priority.uppercase()) } catch (e: Exception) { Priority.MEDIUM },
-                                deadline = deadlineMillis,
-                                googlePrompt = aiTask.googlePrompt,
-                                aiPrompt = aiTask.aiPrompt,
-                                createdAt = System.currentTimeMillis()
-                            ))
-
-                            if (deadlineMillis != null && deadlineMillis > System.currentTimeMillis()) {
-                                calendarManager.addEventToCalendar("AI Task: ${aiTask.description}", "From: ${aiOutput.title}", deadlineMillis)
-                                val cal = Calendar.getInstance().apply { timeInMillis = deadlineMillis }
-                                calendarManager.setAlarm("AI Reminder: ${aiTask.description}", cal.get(Calendar.HOUR_OF_DAY), cal.get(Calendar.MINUTE))
-                            }
-                        }
-                        _statusLog.value = "Processed Successfully."
+                repository.uploadVoiceNote(file).collect { result ->
+                    result.onSuccess { noteId ->
+                        _statusLog.value = "Synchronization complete. Analytics pending."
                         triggerSuccessHaptic()
+                    }.onFailure { error ->
+                        _statusLog.value = "Synchronization failed: ${error.message}"
+                        triggerErrorHaptic()
                     }
-                } else {
-                    _statusLog.value = "Filtered: Too short."
-                    triggerErrorHaptic()
+                    
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        stopForeground(STOP_FOREGROUND_REMOVE)
+                    } else {
+                        @Suppress("DEPRECATION")
+                        stopForeground(true)
+                    }
+                    stopSelf()
                 }
-                
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    stopForeground(STOP_FOREGROUND_REMOVE)
-                } else {
-                    @Suppress("DEPRECATION")
-                    stopForeground(true)
-                }
-                stopSelf()
             }
         } catch (e: Exception) {
             Log.e("VoiceRecordingService", "Error stopping recording", e)
@@ -358,33 +290,6 @@ class VoiceRecordingService : Service() {
         } else {
             @Suppress("DEPRECATION")
             getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
-        }
-    }
-
-    private fun splitAudioByThreshold(file: File, thresholdBytes: Long): List<File> {
-        if (file.length() <= thresholdBytes) return listOf(file)
-        val chunks = mutableListOf<File>()
-        val buffer = ByteArray(thresholdBytes.toInt())
-        val fis = FileInputStream(file)
-        var bytesRead: Int
-        var count = 0
-        while (fis.read(buffer).also { bytesRead = it } != -1) {
-            val chunkFile = File(cacheDir, "chunk_${count++}_${file.name}")
-            val fos = FileOutputStream(chunkFile)
-            fos.write(buffer, 0, bytesRead)
-            fos.close()
-            chunks.add(chunkFile)
-        }
-        fis.close()
-        return chunks
-    }
-
-    private fun parseDate(dateStr: String?): Long? {
-        if (dateStr == null) return null
-        return try {
-            java.text.SimpleDateFormat("yyyy-MM-dd HH:mm", Locale.getDefault()).parse(dateStr)?.time
-        } catch (e: Exception) {
-            null
         }
     }
 

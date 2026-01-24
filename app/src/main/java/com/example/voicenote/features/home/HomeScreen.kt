@@ -37,15 +37,20 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import com.example.voicenote.ui.components.GlassCard
 import com.example.voicenote.ui.components.RecordingButton
+import com.example.voicenote.ui.components.GlassSkeleton
+import com.example.voicenote.ui.components.GlassTabRow
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeScreen(
-    viewModel: HomeViewModel = viewModel(),
-    onNoteClick: (Note) -> Unit = {},
-    onSearchClick: () -> Unit = {}
+    onNoteClick: (com.example.voicenote.data.model.Note) -> Unit,
+    onSearchClick: () -> Unit,
+    onBillingClick: () -> Unit,
+    onJoinMeetingClick: () -> Unit,
+    viewModel: com.example.voicenote.features.home.HomeViewModel = hiltViewModel()
 ) {
     val notes by viewModel.notesState.collectAsState()
+    val walletBalance by viewModel.walletBalance.collectAsState()
     val scope = rememberCoroutineScope()
     var isRefreshing by remember { mutableStateOf(false) }
     var showAddDialog by remember { mutableStateOf(false) }
@@ -100,7 +105,7 @@ fun HomeScreen(
                                 selectedNoteIds.clear()
                                 scope.launch {
                                     val result = snackbarHostState.showSnackbar(
-                                        message = "Notes deleted",
+                                        message = "Selected notes have been moved to the trash.",
                                         actionLabel = "Undo",
                                         duration = SnackbarDuration.Short
                                     )
@@ -115,12 +120,30 @@ fun HomeScreen(
                     )
                 } else {
                     TopAppBar(
-                        title = { Text("My Notes", fontWeight = FontWeight.Bold) },
+                        title = { 
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text("VoiceNote AI")
+                                walletBalance?.let { balance ->
+                                    Spacer(Modifier.width(12.dp))
+                                    SuggestionChip(
+                                        onClick = onBillingClick,
+                                        label = { Text("$balance Cr", style = MaterialTheme.typography.labelSmall) },
+                                        colors = SuggestionChipDefaults.suggestionChipColors(
+                                            containerColor = if (balance < 50) Color.Red.copy(alpha = 0.2f) else Color.White.copy(alpha = 0.1f),
+                                            labelColor = if (balance < 50) Color.Red else Color.White
+                                        )
+                                    )
+                                }
+                            }
+                        },
                         colors = TopAppBarDefaults.topAppBarColors(
                             containerColor = MaterialTheme.colorScheme.background,
                             titleContentColor = MaterialTheme.colorScheme.onBackground
                         ),
                         actions = {
+                            IconButton(onClick = onSearchClick) { Icon(Icons.Default.Search, contentDescription = "Search") }
+                            IconButton(onClick = onJoinMeetingClick) { Icon(Icons.Default.MeetingRoom, contentDescription = "Meetings") }
+                            IconButton(onClick = onBillingClick) { Icon(Icons.Default.Wallet, contentDescription = "Wallet") }
                             IconButton(onClick = { showOnlyLiked = !showOnlyLiked }) {
                                 Icon(
                                     if (showOnlyLiked) Icons.Default.Favorite else Icons.Outlined.FavoriteBorder,
@@ -133,19 +156,17 @@ fun HomeScreen(
                             }
                         }
                     )
-                    Box(
+                    GlassCard(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = 16.dp, vertical = 8.dp)
-                            .clip(RoundedCornerShape(32.dp))
-                            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f))
-                            .clickable { onSearchClick() }
-                            .padding(16.dp)
+                            .clickable { onSearchClick() },
+                        intensity = 0.5f
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Search, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFF00E5FF))
                             Spacer(Modifier.width(8.dp))
-                            Text("Ask V-RAG about your notes...", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text("Ask V-RAG about your notes...", color = Color.White.copy(alpha = 0.7f), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
 
@@ -179,19 +200,21 @@ fun HomeScreen(
             }
         }
     ) { padding ->
-        PullToRefreshBox(
-            isRefreshing = isRefreshing,
-            onRefresh = {
-                scope.launch {
-                    isRefreshing = true
-                    delay(1500)
                     isRefreshing = false
                 }
             },
             modifier = Modifier.padding(padding)
         ) {
-            if (filteredNotes.isEmpty()) {
+            if (notes.isEmpty() && !isRefreshing) {
                 EmptyStateUI()
+            } else if (isRefreshing) {
+                LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(16.dp),
+                    verticalArrangement = Arrangement.spacedBy(12.dp)
+                ) {
+                    items(5) { GlassSkeleton() }
+                }
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
@@ -207,7 +230,7 @@ fun HomeScreen(
                                 viewModel.onDeleteNote(note)
                                 scope.launch {
                                     val result = snackbarHostState.showSnackbar(
-                                        message = "Note deleted",
+                                        message = "Note moved to the trash.",
                                         actionLabel = "Undo",
                                         duration = SnackbarDuration.Short
                                     )
@@ -246,29 +269,59 @@ fun HomeScreen(
 
 @Composable
 fun EmptyStateUI() {
-    Column(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(32.dp),
+        contentAlignment = Alignment.Center
     ) {
-        Icon(
-            Icons.Default.Mic,
-            contentDescription = null,
-            modifier = Modifier.size(100.dp),
-            tint = MaterialTheme.colorScheme.primary.copy(alpha = 0.3f)
-        )
-        Spacer(modifier = Modifier.height(16.dp))
-        Text(
-            "No meetings recorded yet",
-            style = MaterialTheme.typography.headlineSmall,
-            fontWeight = FontWeight.Bold,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.6f)
-        )
-        Text(
-            "Tap the mic to start your first session",
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.4f)
-        )
+        GlassCard(
+            modifier = Modifier.wrapContentSize(),
+            intensity = 0.8f
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier.padding(24.dp)
+            ) {
+                // Liquid Icon Effect
+                val infiniteTransition = rememberInfiniteTransition(label = "liquid")
+                val floatAnim by infiniteTransition.animateFloat(
+                    initialValue = -10f,
+                    targetValue = 10f,
+                    animationSpec = infiniteRepeatable(
+                        animation = tween(2000, easing = FastOutSlowInEasing),
+                        repeatMode = RepeatMode.Reverse
+                    ), label = "float"
+                )
+
+                Icon(
+                    Icons.Default.Mic,
+                    contentDescription = null,
+                    modifier = Modifier
+                        .size(80.dp)
+                        .offset(y = floatAnim.dp),
+                    tint = Color(0xFF00E5FF)
+                )
+                
+                Spacer(modifier = Modifier.height(24.dp))
+                
+                Text(
+                    "Silence is Gold?",
+                    style = MaterialTheme.typography.headlineSmall,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.White
+                )
+                
+                Spacer(modifier = Modifier.height(8.dp))
+                
+                Text(
+                    "Your AI brain is hungry for some voice notes. Tap the mic to begin!",
+                    style = MaterialTheme.typography.bodyMedium,
+                    textAlign = androidx.compose.ui.text.style.TextAlign.Center,
+                    color = Color.White.copy(alpha = 0.6f)
+                )
+            }
+        }
     }
 }
 
@@ -364,15 +417,23 @@ fun NoteCard(
     onClick: () -> Unit,
     onLongClick: () -> Unit
 ) {
+    val scale by animateFloatAsState(
+        targetValue = if (isSelected) 1.05f else 1f,
+        animationSpec = spring(dampingRatio = Spring.DampingRatioMediumBouncy),
+        label = "scale"
+    )
+
     GlassCard(
         modifier = Modifier
             .fillMaxWidth()
-            .pointerInput(Unit) {
+            .scale(scale)
+            .pointerInput(isSelected) {
                 detectTapGestures(
                     onLongPress = { onLongClick() },
                     onTap = { onClick() }
                 )
-            }
+            },
+        intensity = if (isSelected) 1.5f else 1.0f
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (note.isPinned) {
@@ -388,7 +449,7 @@ fun NoteCard(
                 text = note.title,
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.Bold,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = Color.White,
                 modifier = Modifier.weight(1f)
             )
             if (note.isLiked) {
@@ -401,7 +462,7 @@ fun NoteCard(
                 text = note.summary,
                 style = MaterialTheme.typography.bodyMedium,
                 maxLines = 2,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = Color.White.copy(alpha = 0.7f)
             )
         }
         Spacer(modifier = Modifier.height(8.dp))
@@ -413,7 +474,7 @@ fun NoteCard(
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(2.dp)
-                    .background(MaterialTheme.colorScheme.primary)
+                    .background(Color(0xFF00E5FF))
             )
         }
     }

@@ -49,33 +49,39 @@ fun SearchScreen(
 
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = {
+            GlassCard(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                intensity = 0.5f
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onDismiss) {
+                        Icon(Icons.Default.Search, contentDescription = "Close", tint = Color(0xFF00E5FF))
+                    }
                     TextField(
                         value = query,
                         onValueChange = { query = it },
-                        placeholder = { Text("Ask your notes anything...") },
-                        modifier = Modifier.fillMaxWidth(),
+                        placeholder = { Text("Ask your notes anything...", color = Color.White.copy(alpha = 0.5f)) },
+                        modifier = Modifier.weight(1f),
                         colors = TextFieldDefaults.colors(
                             focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent
+                            unfocusedContainerColor = Color.Transparent,
+                            cursorColor = Color(0xFF00E5FF),
+                            focusedIndicatorColor = Color.Transparent,
+                            unfocusedIndicatorColor = Color.Transparent,
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White
                         ),
-                        leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                        trailingIcon = {
-                            if (query.isNotEmpty()) {
-                                TextButton(onClick = { viewModel.performSearch(query) }) {
-                                    Text("ASK V-RAG", color = Primary, fontWeight = FontWeight.Bold)
-                                }
-                            }
-                        }
+                        singleLine = true
                     )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Search, contentDescription = "Close")
+                    if (query.isNotEmpty()) {
+                        IconButton(onClick = { viewModel.performSearch(query) }) {
+                            Icon(androidx.compose.material.icons.automirrored.filled.Send, contentDescription = "Send", tint = Color(0xFF00E5FF))
+                        }
                     }
                 }
-            )
+            }
         }
     ) { padding ->
         Box(modifier = Modifier.padding(padding).fillMaxSize()) {
@@ -89,29 +95,29 @@ fun SearchScreen(
                     verticalArrangement = Arrangement.spacedBy(16.dp)
                 ) {
                     item {
-                        GlassCard {
-                            Text("AI ANSWER", style = MaterialTheme.typography.labelSmall, color = Primary)
+                        GlassCard(intensity = 0.8f) {
+                            Text("AI SYNTHESIS", style = MaterialTheme.typography.labelSmall, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
                             Spacer(Modifier.height(8.dp))
-                            Text(result.answer, style = MaterialTheme.typography.bodyLarge)
-                            Spacer(Modifier.height(8.dp))
+                            Text(result.answer, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                            Spacer(Modifier.height(12.dp))
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Icon(
                                     if (result.source == "local") Icons.Default.Search else Icons.Default.Language,
                                     contentDescription = null,
-                                    modifier = Modifier.size(14.dp),
-                                    tint = Color.Gray
+                                    modifier = Modifier.size(16.dp),
+                                    tint = Color.White.copy(alpha = 0.6f)
                                 )
-                                Spacer(Modifier.width(4.dp))
-                                Text("Source: ${result.source.uppercase()}", style = MaterialTheme.typography.labelSmall, color = Color.Gray)
+                                Spacer(Modifier.width(6.dp))
+                                Text("Powered by ${result.source.uppercase()}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
                             }
                         }
                     }
                     
                     if (result.localResults.isNotEmpty()) {
-                        item { Text("Reference Notes", style = MaterialTheme.typography.titleSmall) }
+                        item { Text("Contextual References", style = MaterialTheme.typography.titleSmall, color = Color.White.copy(alpha = 0.8f)) }
                         items(result.localResults) { note ->
-                            GlassCard {
-                                Text(note, style = MaterialTheme.typography.bodyMedium)
+                            GlassCard(intensity = 0.4f) {
+                                Text(note, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f))
                             }
                         }
                     }

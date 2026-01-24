@@ -77,6 +77,12 @@ class FloatingHubService : Service() {
                         RecordingButton(
                             isRecording = isRecording,
                             onClick = {
+                                val securityManager = com.example.voicenote.core.security.SecurityManager(this@FloatingHubService)
+                                if (securityManager.getSessionToken() == null) {
+                                    android.widget.Toast.makeText(this@FloatingHubService, "Authentication required: Please log in to the main application to enable voice recording.", android.widget.Toast.LENGTH_LONG).show()
+                                    return@RecordingButton
+                                }
+                                
                                 val intent = Intent(this@FloatingHubService, VoiceRecordingService::class.java)
                                 if (isRecording) {
                                     intent.action = VoiceRecordingService.ACTION_STOP_RECORDING

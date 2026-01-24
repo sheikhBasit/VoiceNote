@@ -8,19 +8,12 @@ import android.provider.Settings
 import android.util.Patterns
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.*
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
-import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import com.example.voicenote.ui.components.GlassyTextField
+import com.example.voicenote.ui.theme.GlassyCard
+import com.example.voicenote.ui.theme.GlassyEffects
+import com.example.voicenote.ui.theme.Background
+import com.example.voicenote.ui.theme.Primary
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
@@ -185,7 +178,7 @@ fun ApiSettingsScreen(viewModel: ApiSettingsViewModel = viewModel()) {
                         }
 
                         if (user?.primaryRole == UserRole.OTHER || user?.secondaryRole == UserRole.OTHER) {
-                            OutlinedTextField(
+                            GlassyTextField(
                                 value = customRoleDesc,
                                 onValueChange = { 
                                     if (it.split(" ").size <= 5) {
@@ -193,35 +186,31 @@ fun ApiSettingsScreen(viewModel: ApiSettingsViewModel = viewModel()) {
                                         viewModel.updateUserProfile(editEmail, user?.primaryRole ?: UserRole.GENERIC, user?.secondaryRole, it, user?.floatingButtonScheduled ?: false, localStartHour.toInt(), localEndHour.toInt(), user?.workDays ?: emptyList()) 
                                     }
                                 },
-                                label = { Text("Describe your role (max 5 words)") },
-                                modifier = Modifier.fillMaxWidth(),
-                                isError = customRoleDesc.split(" ").size > 5
+                                label = "Describe your role (max 5 words)",
+                                error = if (customRoleDesc.split(" ").size > 5) "Too long" else null
                             )
                         }
 
                         val isEmailValid = editEmail.isEmpty() || Patterns.EMAIL_ADDRESS.matcher(editEmail).matches()
-                        OutlinedTextField(
+                        GlassyTextField(
                             value = editEmail,
                             onValueChange = { editEmail = it; isEditingEmail = true },
-                            label = { Text("Contact Email") },
-                            modifier = Modifier.fillMaxWidth(),
-                            singleLine = true,
-                            isError = !isEmailValid,
-                            trailingIcon = {
-                                if (isEditingEmail) {
-                                    Row {
-                                        IconButton(onClick = { editEmail = user?.email ?: ""; isEditingEmail = false }) { Icon(Icons.Default.Clear, contentDescription = "Cancel") }
-                                        IconButton(
-                                            onClick = {
-                                                viewModel.updateUserProfile(editEmail, user?.primaryRole ?: UserRole.GENERIC, user?.secondaryRole, customRoleDesc, user?.floatingButtonScheduled ?: false, localStartHour.toInt(), localEndHour.toInt(), user?.workDays ?: emptyList())
-                                                isEditingEmail = false
-                                            },
-                                            enabled = isEmailValid
-                                        ) { Icon(Icons.Default.Check, contentDescription = "Save") }
-                                    }
-                                }
-                            }
+                            label = "Contact Email",
+                            error = if (!isEmailValid) "Invalid email" else null
                         )
+                        
+                        if (isEditingEmail) {
+                            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+                                TextButton(onClick = { editEmail = user?.email ?: ""; isEditingEmail = false }) { Text("Cancel") }
+                                Button(
+                                    onClick = {
+                                        viewModel.updateUserProfile(editEmail, user?.primaryRole ?: UserRole.GENERIC, user?.secondaryRole, customRoleDesc, user?.floatingButtonScheduled ?: false, localStartHour.toInt(), localEndHour.toInt(), user?.workDays ?: emptyList())
+                                        isEditingEmail = false
+                                    },
+                                    enabled = isEmailValid
+                                ) { Text("Save") }
+                            }
+                        }
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
@@ -328,14 +317,17 @@ fun ApiSettingsScreen(viewModel: ApiSettingsViewModel = viewModel()) {
                 Text("API Infrastructure", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
                 Spacer(modifier = Modifier.height(12.dp))
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    OutlinedTextField(
+                    GlassyTextField(
                         value = newKey, 
                         onValueChange = { newKey = it }, 
-                        label = { Text("Add Groq API Key") },
+                        label = "Add Groq API Key",
                         modifier = Modifier.weight(1f),
                         visualTransformation = if (newKey.isNotEmpty()) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None
                     )
-                    IconButton(onClick = { if (newKey.isNotBlank()) { viewModel.addKey(newKey); newKey = "" } }) { Icon(Icons.Default.AddCircle, contentDescription = "Add") }
+                    IconButton(
+                        onClick = { if (newKey.isNotBlank()) { viewModel.addKey(newKey); newKey = "" } },
+                        modifier = Modifier.padding(top = 22.dp) // Align with text field box
+                    ) { Icon(Icons.Default.AddCircle, contentDescription = "Add", tint = Primary) }
                 }
                 Spacer(modifier = Modifier.height(16.dp))
             }

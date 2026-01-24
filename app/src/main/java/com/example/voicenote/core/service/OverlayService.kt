@@ -127,8 +127,14 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
                             modifier = Modifier
                                 .padding(8.dp)
                                 .clip(RoundedCornerShape(32.dp))
-                                .background(GlassBackground)
-                                .border(1.dp, GlassBorder, RoundedCornerShape(32.dp))
+                                .background(Color.White.copy(alpha = 0.05f))
+                                .border(
+                                    width = 1.dp,
+                                    brush = Brush.verticalGradient(
+                                        listOf(Color.White.copy(alpha = 0.2f), Color.Transparent)
+                                    ),
+                                    shape = RoundedCornerShape(32.dp)
+                                )
                                 .padding(4.dp)
                         ) {
                             RecordingButton(
@@ -222,12 +228,12 @@ class OverlayService : Service(), LifecycleOwner, ViewModelStoreOwner, SavedStat
             modifier = Modifier
                 .size(44.dp)
                 .clip(CircleShape)
-                .background(GlassBackground)
-                .border(1.dp, GlassBorder, CircleShape)
+                .background(Color.White.copy(alpha = 0.08f))
+                .border(0.5.dp, Color.White.copy(alpha = 0.2f), CircleShape)
                 .clickable { onClick() },
             contentAlignment = Alignment.Center
         ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(22.dp), tint = Color.White)
+            Icon(icon, contentDescription = null, modifier = Modifier.size(20.dp), tint = Color.White)
         }
     }
 

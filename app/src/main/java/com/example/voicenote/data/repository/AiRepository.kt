@@ -6,18 +6,28 @@ import com.google.gson.Gson
 import kotlinx.coroutines.flow.firstOrNull
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.MultipartBody
+import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.asRequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
+import retrofit2.HttpException
 import retrofit2.Retrofit
 import retrofit2.converter.gson.GsonConverterFactory
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.*
+import java.util.concurrent.TimeUnit
 
 class AiRepository(private val firestoreRepository: FirestoreRepository) {
 
+    private val okHttpClient = OkHttpClient.Builder()
+        .connectTimeout(60, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .writeTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     private val retrofit = Retrofit.Builder()
         .baseUrl("https://api.groq.com/openai/")
+        .client(okHttpClient)
         .addConverterFactory(GsonConverterFactory.create())
         .build()
 
@@ -39,7 +49,7 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
             val response = groqApi.transcribeAudio("Bearer $currentKey", body, model)
             response.text
         } catch (e: Exception) {
-            firestoreRepository.rotateApiKey()
+            handleApiError(e)
             null
         }
     }
@@ -104,9 +114,11 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
             val response = groqApi.getChatCompletion("Bearer $currentKey", request)
             val jsonContent = response.choices.firstOrNull()?.message?.content
             if (jsonContent == null || jsonContent.trim() == "{}") return null
-            gson.fromJson(jsonContent, NoteAiOutput::class.java)
+            
+            val cleanedJson = cleanJsonResponse(jsonContent)
+            gson.fromJson(cleanedJson, NoteAiOutput::class.java)
         } catch (e: Exception) {
-            firestoreRepository.rotateApiKey()
+            handleApiError(e)
             null
         }
     }
@@ -125,14 +137,39 @@ class AiRepository(private val firestoreRepository: FirestoreRepository) {
                 Message(role = "system", content = systemPrompt),
                 Message(role = "user", content = question)
             ),
-            responseFormat = ResponseFormat(type = "text") // We want a direct text answer
+            responseFormat = ResponseFormat(type = "text")
         )
 
         return try {
             val response = groqApi.getChatCompletion("Bearer $currentKey", request)
             response.choices.firstOrNull()?.message?.content ?: "I couldn't generate an answer."
         } catch (e: Exception) {
+            handleApiError(e)
             "Error communicating with AI brain."
+        }
+    }
+
+    private fun cleanJsonResponse(content: String): String {
+        var result = content.trim()
+        if (result.startsWith("```json")) {
+            result = result.removePrefix("```json")
+        }
+        if (result.startsWith("```")) {
+            result = result.removePrefix("```")
+        }
+        if (result.endsWith("```")) {
+            result = result.removeSuffix("```")
+        }
+        return result.trim()
+    }
+
+    private suspend fun handleApiError(e: Exception) {
+        if (e is HttpException) {
+            val code = e.code()
+            // 401: Unauthorized, 429: Rate Limit
+            if (code == 401 || code == 429) {
+                firestoreRepository.rotateApiKey()
+            }
         }
     }
 }
