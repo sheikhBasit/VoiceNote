@@ -9,20 +9,10 @@ val Primary = Color(0xFF00E5FF) // Cyber Cyan
 val Secondary = Color(0xFF7C4DFF) // Deep Purple
 val AccentGlow = Color(0xFF9132FF)
 
-val DarkColorScheme = darkColorScheme(
-    primary = Primary,
-    secondary = Secondary,
-    background = Background,
-    surface = Surface,
-    onPrimary = Color.Black,
-    onSecondary = Color.White,
-    onBackground = Color(0xFFE0E0E0),
-    onSurface = Color.White
-)
-
-@Composable
-fun VoiceNoteThemeConsolidated(
-    content: @Composable () -> Unit
-) {
-    // This is a placeholder or should be removed if already in Theme.kt
-}
+// Missing colors used in UI components
+val GlassBackground = Color.White.copy(alpha = 0.1f)
+val GlassBorder = Color.White.copy(alpha = 0.2f)
+val PendingColor = Color(0xFFFFB300)
+val PriorityHigh = Color(0xFFFF3D00)
+val PriorityMedium = Color(0xFFFFD600)
+val PriorityLow = Color(0xFF00E676)

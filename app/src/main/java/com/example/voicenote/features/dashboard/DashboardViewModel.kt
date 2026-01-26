@@ -2,13 +2,12 @@ package com.example.voicenote.features.dashboard
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import com.example.voicenote.data.remote.AIStats
-import com.example.voicenote.data.remote.DashboardResponse
 import com.example.voicenote.data.repository.VoiceNoteRepository
 import com.example.voicenote.core.network.ConnectivityObserver
 import com.example.voicenote.core.network.ConnectivityStatus
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.launch
 import javax.inject.Inject
 
 @HiltViewModel

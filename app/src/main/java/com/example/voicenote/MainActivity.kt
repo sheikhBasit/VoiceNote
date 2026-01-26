@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.provider.Settings
 import android.util.Log
+import android.util.Patterns
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -16,18 +17,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.biometric.BiometricPrompt
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Checklist
-import androidx.compose.material.icons.filled.Description
-import androidx.compose.material.icons.filled.Mic
-import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
@@ -40,19 +37,20 @@ import com.example.voicenote.core.security.SecurityManager
 import com.example.voicenote.core.service.OverlayService
 import com.example.voicenote.core.service.VoiceRecordingService
 import com.example.voicenote.core.workers.ReminderWorker
-import com.example.voicenote.data.model.User
-import com.example.voicenote.data.repository.FirestoreRepository
+import com.example.voicenote.data.remote.SyncRequest
+import com.example.voicenote.data.repository.VoiceNoteRepository
 import com.example.voicenote.features.detail.NoteDetailScreen
 import com.example.voicenote.features.home.HomeScreen
 import com.example.voicenote.features.settings.ApiSettingsScreen
 import com.example.voicenote.features.tasks.TasksScreen
 import com.example.voicenote.features.search.SearchScreen
+import com.example.voicenote.ui.components.GlassyTextField
 import com.example.voicenote.ui.theme.VoiceNoteTheme
+import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import java.io.File
 import java.util.concurrent.Executor
-
-import dagger.hilt.android.AndroidEntryPoint
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -60,84 +58,71 @@ class MainActivity : AppCompatActivity() {
     private lateinit var executor: Executor
     private lateinit var biometricPrompt: BiometricPrompt
     private lateinit var promptInfo: BiometricPrompt.PromptInfo
-    private lateinit var securityManager: SecurityManager
+    
+    @Inject
+    lateinit var securityManager: SecurityManager
     
     @Inject
     lateinit var repository: VoiceNoteRepository
+    
     private var mediaPlayer: MediaPlayer? = null
-
-    @Inject
-    lateinit var webSocketManager: com.example.voicenote.core.network.WebSocketManager
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         executor = ContextCompat.getMainExecutor(this)
-        securityManager = SecurityManager(this)
-        
-        // Start Real-time Pulse
-        webSocketManager.connect()
         
         ReminderWorker.schedule(this)
         
         val deviceId = Settings.Secure.getString(contentResolver, Settings.Secure.ANDROID_ID) ?: Build.SERIAL
 
         setContent {
-            var isAuthenticated by remember { 
-                mutableStateOf(!securityManager.isBiometricEnabled() || securityManager.hasBypassedOnce()) 
+            var authState by remember { 
+                mutableStateOf(if (securityManager.getUserEmail() != null && (!securityManager.isBiometricEnabled() || securityManager.hasBypassedOnce())) 
+                    AuthState.Authenticated else AuthState.LoginRequired) 
             }
+            
             var showOverlayDialog by remember { mutableStateOf(false) }
             
             val permissionsLauncher = rememberLauncherForActivityResult(
                 ActivityResultContracts.RequestMultiplePermissions()
             ) { permissions ->
                 val allGranted = permissions.entries.all { it.value }
-                if (allGranted) {
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-                        showOverlayDialog = true
-                    } else {
-                        startService(Intent(this, OverlayService::class.java))
-                    }
-                } else {
-                    Toast.makeText(this, "Permissions restricted: To proceed with voice recording and synchronization, please grant the necessary permissions in System Settings.", Toast.LENGTH_LONG).show()
+                if (allGranted && Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+                    showOverlayDialog = true
                 }
             }
 
             LaunchedEffect(Unit) {
-                val permissions = mutableListOf(
+                permissionsLauncher.launch(arrayOf(
                     Manifest.permission.RECORD_AUDIO,
                     Manifest.permission.POST_NOTIFICATIONS,
-                    Manifest.permission.READ_CALENDAR,
-                    Manifest.permission.WRITE_CALENDAR,
-                    Manifest.permission.READ_CONTACTS,
-                    Manifest.permission.CALL_PHONE,
-                    Manifest.permission.CAMERA,
-                    "com.android.alarm.permission.SET_ALARM"
-                )
-                permissionsLauncher.launch(permissions.toTypedArray())
+                    Manifest.permission.CAMERA
+                ))
             }
 
-    VoiceNoteTheme {
-        Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            if (isAuthenticated) {
-                val navController = rememberNavController()
-                com.example.voicenote.ui.navigation.AppNavigation(navController)
-                
-                // Handle deep-link
-                LaunchedEffect(intent.getStringExtra("note_id_to_open")) {
-                    intent.getStringExtra("note_id_to_open")?.let {
-                        navController.navigate("detail/$it")
+            VoiceNoteTheme {
+                Surface(modifier = Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+                    when (authState) {
+                        AuthState.Authenticated -> {
+                            val navToNoteId = intent.getStringExtra("note_id_to_open")
+                            AppNavigation(navToNoteId)
+                        }
+                        AuthState.LoginRequired -> {
+                            LoginScreen(deviceId) { email ->
+                                securityManager.saveUserEmail(email)
+                                authState = if (securityManager.isBiometricEnabled()) AuthState.BiometricRequired else AuthState.Authenticated
+                            }
+                        }
+                        AuthState.BiometricRequired -> {
+                            BiometricAuthScreen { 
+                                showBiometricPrompt { 
+                                    securityManager.setBypassedOnce(true)
+                                    authState = AuthState.Authenticated 
+                                } 
+                            }
+                        }
                     }
-                }
-            } else {
-                com.example.voicenote.features.auth.PremiumAuthScreen { 
-                    showBiometricPrompt { 
-                        securityManager.setBypassedOnce(true)
-                        isAuthenticated = true 
-                        handleUserRegistration(deviceId)
-                    } 
-                }
-            }
 
                     if (showOverlayDialog) {
                         AlertDialog(
@@ -158,33 +143,163 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun handleUserRegistration(deviceId: String) {
-        val token = securityManager.getSessionToken() ?: securityManager.generateNewToken()
-        val deviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
-            Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
-        } else {
-            Build.MODEL
+    enum class AuthState { LoginRequired, BiometricRequired, Authenticated }
+
+    @Composable
+    fun LoginScreen(deviceId: String, onLoginSuccess: (String) -> Unit) {
+        var email by remember { mutableStateOf("") }
+        var isSyncing by remember { mutableStateOf(false) }
+        var error by remember { mutableStateOf<String?>(null) }
+
+        Column(
+            modifier = Modifier.fillMaxSize().padding(24.dp),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.Center
+        ) {
+            Text("Welcome to VoiceNote", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+            Text("Identify yourself to sync your AI Brain", style = MaterialTheme.typography.bodyMedium, color = Color.Gray)
+            
+            Spacer(modifier = Modifier.height(32.dp))
+            
+            GlassyTextField(
+                value = email,
+                onValueChange = { email = it; error = null },
+                label = "Work/Personal Email",
+                error = error,
+                keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Email)
+            )
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            
+            Button(
+                onClick = {
+                    if (!Patterns.EMAIL_ADDRESS.matcher(email).matches()) {
+                        error = "Please enter a valid email"
+                        return@Button
+                    }
+                    isSyncing = true
+                    val deviceName = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N_MR1) {
+                        Settings.Global.getString(contentResolver, Settings.Global.DEVICE_NAME) ?: Build.MODEL
+                    } else Build.MODEL
+
+                    lifecycleScope.launch {
+                        val request = SyncRequest(
+                            name = deviceName,
+                            email = email,
+                            token = securityManager.getSessionToken() ?: securityManager.generateNewToken(),
+                            deviceId = deviceId,
+                            deviceModel = Build.MODEL,
+                            primaryRole = "GENERIC"
+                        )
+                        repository.syncUser(request).collect { result ->
+                            isSyncing = false
+                            result.onSuccess {
+                                securityManager.saveSessionToken(it.accessToken)
+                                onLoginSuccess(email)
+                            }.onFailure {
+                                error = it.message ?: "Sync failed. New devices must use an authorized email."
+                            }
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth(),
+                enabled = !isSyncing && email.isNotEmpty(),
+                shape = RoundedCornerShape(16.dp)
+            ) {
+                if (isSyncing) CircularProgressIndicator(modifier = Modifier.size(24.dp), color = Color.White)
+                else Text("Connect Device")
+            }
+            
+            Spacer(modifier = Modifier.height(16.dp))
+            Text("Hardware ID: $deviceId", style = MaterialTheme.typography.labelSmall, color = Color.Gray.copy(alpha = 0.5f))
         }
-        
-        lifecycleScope.launch {
-            val existingUser = repository.getUserByDeviceId(deviceId)
-            if (existingUser == null) {
-                repository.saveUser(User(token = token, name = deviceName, deviceId = deviceId, deviceModel = Build.MODEL, lastLogin = System.currentTimeMillis()))
-            } else {
-                repository.saveUser(existingUser.copy(lastLogin = System.currentTimeMillis()))
+    }
+
+    @Composable
+    fun BiometricAuthScreen(onRetry: () -> Unit) {
+        LaunchedEffect(Unit) { onRetry() }
+        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                Icon(Icons.Default.Fingerprint, contentDescription = null, modifier = Modifier.size(64.dp), tint = MaterialTheme.colorScheme.primary)
+                Spacer(modifier = Modifier.height(16.dp))
+                Button(onClick = onRetry) { Text("Unlock AI Brain") }
             }
         }
     }
 
     @Composable
-    fun AuthScreen(onRetry: () -> Unit) {
-        LaunchedEffect(Unit) { onRetry() }
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-            Button(onClick = onRetry) { Text("Unlock with Biometrics") }
+    fun AppNavigation(initialNoteId: String? = null) {
+        val navController = rememberNavController()
+        val items = listOf("tasks", "notes", "stt_logs", "settings")
+
+        LaunchedEffect(initialNoteId) {
+            initialNoteId?.let { navController.navigate("detail/$it") }
+        }
+
+        Scaffold(
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.background, tonalElevation = 0.dp) {
+                    val navBackStackEntry by navController.currentBackStackEntryAsState()
+                    val currentDestination = navBackStackEntry?.destination
+                    
+                    items.forEach { screen ->
+                        NavigationBarItem(
+                            icon = { 
+                                Icon(
+                                    when(screen) {
+                                        "notes" -> Icons.Default.Description
+                                        "tasks" -> Icons.Default.Checklist
+                                        "stt_logs" -> Icons.Default.Mic
+                                        else -> Icons.Default.Settings
+                                    },
+                                    contentDescription = screen
+                                )
+                            },
+                            label = { Text(screen.replaceFirstChar { it.uppercase() }) },
+                            selected = currentDestination?.hierarchy?.any { it.route == screen } == true,
+                            onClick = {
+                                navController.navigate(screen) {
+                                    popUpTo("tasks") { saveState = true }
+                                    launchSingleTop = true
+                                    restoreState = true
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+        ) { innerPadding ->
+            NavHost(navController, startDestination = "tasks", Modifier.padding(innerPadding)) {
+                composable("tasks") { 
+                    TasksScreen(
+                        onTaskClick = { noteId -> navController.navigate("detail/$noteId") },
+                        onSearchClick = { navController.navigate("search") }
+                    ) 
+                }
+                composable("notes") { 
+                    HomeScreen(
+                        onNoteClick = { note -> navController.navigate("detail/${note.id}") },
+                        onSearchClick = { navController.navigate("search") },
+                        onBillingClick = { navController.navigate("billing") },
+                        onJoinMeetingClick = { navController.navigate("join_meeting") }
+                    ) 
+                }
+                composable("stt_logs") { SttLogsScreen() }
+                composable("settings") { ApiSettingsScreen() }
+                composable("search") { SearchScreen(onDismiss = { navController.popBackStack() }) }
+                composable("billing") { com.example.voicenote.features.billing.BillingScreen(onBack = { navController.popBackStack() }) }
+                composable("join_meeting") { 
+                    com.example.voicenote.features.meetings.JoinMeetingScreen(
+                        onBack = { navController.popBackStack() },
+                        onBotDispatched = { navController.popBackStack() }
+                    ) 
+                }
+                composable("detail/{noteId}") { 
+                    NoteDetailScreen(onBack = { navController.popBackStack() })
+                }
+            }
         }
     }
-
-    // Navigation is now handled by com.example.voicenote.ui.navigation.AppNavigation
 
     @OptIn(ExperimentalMaterial3Api::class)
     @Composable
@@ -239,7 +354,7 @@ class MainActivity : AppCompatActivity() {
         try {
             val file = File(path)
             if (!file.exists()) {
-                Toast.makeText(this, "Resource unavailable: The requested audio file could not be located on this device.", Toast.LENGTH_SHORT).show()
+                Toast.makeText(this, "File not found at: $path", Toast.LENGTH_SHORT).show()
                 return
             }
             mediaPlayer?.release()
@@ -250,7 +365,7 @@ class MainActivity : AppCompatActivity() {
             }
         } catch (e: Exception) {
             Log.e("Playback", "Error playing: $path", e)
-            Toast.makeText(this, "Playback interrupted: We encountered an unexpected error while playing the audio. Please try again.", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, "Playback error: ${e.message}", Toast.LENGTH_SHORT).show()
         }
     }
 
@@ -285,19 +400,5 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         mediaPlayer?.release()
-    }
-}
-
-// Utility to open other apps
-fun openApp(context: android.content.Context, packageName: String) {
-    val intent = context.packageManager.getLaunchIntentForPackage(packageName)
-    if (intent != null) {
-        context.startActivity(intent)
-    } else {
-        try {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("market://details?id=$packageName")))
-        } catch (e: Exception) {
-            context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://play.google.com/store/apps/details?id=$packageName")))
-        }
     }
 }

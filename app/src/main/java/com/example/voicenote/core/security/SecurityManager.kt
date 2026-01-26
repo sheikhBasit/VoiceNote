@@ -28,6 +28,7 @@ class SecurityManager(context: Context) {
 
     companion object {
         private const val KEY_USER_TOKEN = "user_session_token"
+        private const val KEY_USER_EMAIL = "user_email"
         private const val KEY_NAME = "biometric_key"
         private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
         private const val KEY_BIOMETRIC_BYPASSED = "biometric_bypassed"
@@ -39,6 +40,14 @@ class SecurityManager(context: Context) {
 
     fun saveSessionToken(token: String) {
         sharedPreferences.edit().putString(KEY_USER_TOKEN, token).apply()
+    }
+
+    fun getUserEmail(): String? {
+        return sharedPreferences.getString(KEY_USER_EMAIL, null)
+    }
+
+    fun saveUserEmail(email: String) {
+        sharedPreferences.edit().putString(KEY_USER_EMAIL, email).apply()
     }
 
     fun isBiometricEnabled(): Boolean {
@@ -61,6 +70,13 @@ class SecurityManager(context: Context) {
         val token = UUID.randomUUID().toString()
         saveSessionToken(token)
         return token
+    }
+
+    fun clearSession() {
+        sharedPreferences.edit()
+            .remove(KEY_USER_TOKEN)
+            .remove(KEY_BIOMETRIC_BYPASSED)
+            .apply()
     }
 
     fun getInitializedCipher(): Cipher {

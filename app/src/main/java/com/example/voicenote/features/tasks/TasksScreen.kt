@@ -1,7 +1,8 @@
 package com.example.voicenote.features.tasks
 
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -13,7 +14,6 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.DoneAll
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.*
-import androidx.compose.material3.TabRowDefaults.tabIndicatorOffset
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -21,17 +21,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.voicenote.core.components.PriorityBadge
 import com.example.voicenote.data.model.Priority
 import com.example.voicenote.data.model.Task
-import com.example.voicenote.data.repository.FirestoreRepository
 import com.example.voicenote.ui.theme.PriorityHigh
 import com.example.voicenote.ui.theme.PriorityLow
 import com.example.voicenote.ui.theme.PriorityMedium
-import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
@@ -53,7 +49,6 @@ fun TasksScreen(
     var showDoneTasks by remember { mutableStateOf(false) }
     
     val tabs = listOf("High", "Medium", "Low")
-    val tabColors = listOf(PriorityHigh, PriorityMedium, PriorityLow)
 
     val selectedTaskIds = remember { mutableStateListOf<String>() }
     val isSelectionMode = selectedTaskIds.isNotEmpty()

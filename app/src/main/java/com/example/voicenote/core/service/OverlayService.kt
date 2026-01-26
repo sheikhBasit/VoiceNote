@@ -18,6 +18,7 @@ import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.expandHorizontally
 import androidx.compose.animation.shrinkHorizontally
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -31,6 +32,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.*
@@ -42,11 +44,8 @@ import com.example.voicenote.MainActivity
 import com.example.voicenote.data.repository.FirestoreRepository
 import com.example.voicenote.ui.theme.VoiceNoteTheme
 import com.example.voicenote.ui.components.RecordingButton
-import com.example.voicenote.ui.components.GlassCard
 import com.example.voicenote.ui.theme.GlassBackground
 import com.example.voicenote.ui.theme.GlassBorder
-import androidx.compose.ui.draw.blur
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.util.*
 

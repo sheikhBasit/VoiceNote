@@ -8,23 +8,18 @@ import android.media.audiofx.AcousticEchoCanceler
 import android.media.audiofx.NoiseSuppressor
 import android.os.*
 import android.provider.CalendarContract
-import android.provider.Settings
 import android.util.Log
 import androidx.core.app.NotificationCompat
-import com.example.voicenote.MainActivity
 import com.example.voicenote.core.utils.CalendarManager
-import com.example.voicenote.data.model.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
 import java.io.File
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.util.*
+import javax.inject.Inject
 
 @dagger.hilt.android.AndroidEntryPoint
 class VoiceRecordingService : Service() {
@@ -32,7 +27,6 @@ class VoiceRecordingService : Service() {
     private val serviceJob = SupervisorJob()
     private val serviceScope = CoroutineScope(Dispatchers.Main + serviceJob)
     
-    // Injecting the new cross-platform repository
     @Inject lateinit var repository: com.example.voicenote.data.repository.VoiceNoteRepository
     private lateinit var calendarManager: CalendarManager
 
@@ -59,7 +53,7 @@ class VoiceRecordingService : Service() {
                             _statusLog.value = "Capture paused: Silence detected..."
                         } catch (e: Exception) { Log.e("VAD", "Pause failed") }
                     }
-                } else if (amplitude >= SILENCE_THRESHOLD && isPausedBySilence) {
+                } else if (amp >= SILENCE_THRESHOLD && isPausedBySilence) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         try {
                             mediaRecorder?.resume()
@@ -77,7 +71,7 @@ class VoiceRecordingService : Service() {
         const val CHANNEL_ID = "VoiceRecordingChannel"
         const val NOTIFICATION_ID = 1
         const val ACTION_STOP_RECORDING = "STOP_RECORDING"
-        const val ACTION_DISCARD_RECORDING = "DISCARD_RECORDING"
+        const val ACTION_DISCARD_RECORDING = "ACTION_DISCARD_RECORDING"
         
         private val _isRecording = MutableStateFlow(false)
         val isRecording: StateFlow<Boolean> = _isRecording
@@ -90,6 +84,9 @@ class VoiceRecordingService : Service() {
 
         private val _lastRecordedFilePath = MutableStateFlow<String?>(null)
         val lastRecordedFilePath: StateFlow<String?> = _lastRecordedFilePath
+
+        private val _transcriptionHistory = MutableStateFlow<List<String>>(emptyList())
+        val transcriptionHistory: StateFlow<List<String>> = _transcriptionHistory
     }
 
     override fun onCreate() {
@@ -113,7 +110,6 @@ class VoiceRecordingService : Service() {
         try {
             currentMeetingTitle = getCurrentCalendarEvent()
             
-            // Move recording to a persistent location instead of cache if we want to play it back later locally
             val persistentDir = getExternalFilesDir(null) ?: filesDir
             audioFile = File(persistentDir, "recording_${System.currentTimeMillis()}.mp4")
             

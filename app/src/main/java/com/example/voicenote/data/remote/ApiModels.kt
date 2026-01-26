@@ -3,6 +3,8 @@ package com.example.voicenote.data.remote
 import com.example.voicenote.data.model.Priority
 import com.example.voicenote.data.model.NoteStatus
 import com.example.voicenote.data.model.CommunicationType
+import com.example.voicenote.data.model.Note
+import com.example.voicenote.data.model.Task
 import com.google.gson.annotations.SerializedName
 
 /**
@@ -71,6 +73,25 @@ data class NoteResponseDTO(
     @SerializedName("is_deleted") val isDeleted: Boolean
 )
 
+fun NoteResponseDTO.toNote(): Note {
+    return Note(
+        id = id,
+        userId = userId,
+        title = title,
+        summary = summary,
+        transcript = transcript,
+        audioUrl = audioUrl,
+        timestamp = timestamp,
+        priority = priority,
+        status = status,
+        isDeleted = isDeleted,
+        updatedAt = updatedAt,
+        isPinned = isPinned,
+        isLiked = isLiked,
+        isArchived = isArchived
+    )
+}
+
 data class TaskSummaryDTO(
     val id: String,
     val description: String,
@@ -92,6 +113,23 @@ data class TaskResponseDTO(
     @SerializedName("communication_type") val communicationType: CommunicationType?,
     @SerializedName("is_action_approved") val isActionApproved: Boolean
 )
+
+fun TaskResponseDTO.toTask(): Task {
+    val primaryEntity = assignedEntities.firstOrNull()
+    return Task(
+        id = id,
+        noteId = noteId,
+        description = description,
+        isDone = isDone,
+        deadline = deadline,
+        priority = priority,
+        assignedContactName = primaryEntity?.name,
+        assignedContactPhone = primaryEntity?.phone,
+        communicationType = communicationType,
+        isActionApproved = isActionApproved,
+        imageUrl = imageUrls.firstOrNull()
+    )
+}
 
 data class EntityDTO(
     val name: String? = null,

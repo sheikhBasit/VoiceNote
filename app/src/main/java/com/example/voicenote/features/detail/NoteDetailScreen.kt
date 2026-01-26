@@ -9,15 +9,15 @@ import android.net.Uri
 import android.widget.Toast
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -29,41 +29,63 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.hilt.navigation.compose.hiltViewModel
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
-import androidx.lifecycle.viewmodel.compose.viewModel
 import coil.compose.AsyncImage
 import com.example.voicenote.core.components.PriorityBadge
+import com.example.voicenote.core.network.WebSocketManager
 import com.example.voicenote.core.utils.ActionExecutor
 import com.example.voicenote.core.utils.CalendarManager
 import com.example.voicenote.core.utils.ContactInfo
 import com.example.voicenote.core.utils.ContactManager
 import com.example.voicenote.core.utils.PdfManager
 import com.example.voicenote.data.model.*
-import com.example.voicenote.data.repository.AiRepository
-import com.example.voicenote.data.repository.FirestoreRepository
+import com.example.voicenote.data.remote.toNote
+import com.example.voicenote.data.remote.toTask
+import com.example.voicenote.data.repository.VoiceNoteRepository
 import com.example.voicenote.ui.theme.PendingColor
-import com.example.voicenote.ui.theme.PriorityHigh
 import com.example.voicenote.ui.components.GlassCard
 import com.example.voicenote.ui.components.GlassTabRow
+import com.example.voicenote.ui.components.GlassyTextField
+import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.*
+import javax.inject.Inject
 import kotlin.math.abs
 
-class NoteDetailViewModel @javax.inject.Inject constructor(
-    private val noteId: String,
-    private val repository: com.example.voicenote.data.repository.VoiceNoteRepository
+@HiltViewModel
+class NoteDetailViewModel @Inject constructor(
+    savedStateHandle: SavedStateHandle,
+    private val repository: VoiceNoteRepository,
+    private val webSocketManager: WebSocketManager
 ) : ViewModel() {
+    private val noteId: String = checkNotNull(savedStateHandle["noteId"])
     private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1)
     
     val note: StateFlow<Note?> = refreshTrigger
         .flatMapLatest { repository.getNote(noteId) }
-        .map { it.getOrNull() }
+        .map { it.getOrNull()?.toNote() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    val tasks: StateFlow<List<Task>> = refreshTrigger
+        .flatMapLatest { repository.getTasks(noteId) }
+        .map { list -> list.map { it.toTask() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    val allActiveTasks: StateFlow<List<Task>> = repository.getTasks()
+        .map { list -> list.map { it.toTask() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _aiResponse = MutableStateFlow<String?>(null)
+    val aiResponse: StateFlow<String?> = _aiResponse.asStateFlow()
+
+    private val _isProcessingAi = MutableStateFlow(false)
+    val isProcessingAi: StateFlow<Boolean> = _isProcessingAi.asStateFlow()
 
     init {
         refreshTrigger.tryEmit(Unit)
@@ -76,9 +98,8 @@ class NoteDetailViewModel @javax.inject.Inject constructor(
             }
         }
         
-        // Listen for AI Responses specifically
         viewModelScope.launch {
-            (webSocketManager as? com.example.voicenote.core.network.WebSocketManager)?.updates?.collect { event ->
+            webSocketManager.updates.collect { event ->
                 if (event["type"] == "AI_RESPONSE") {
                     val data = event["data"] as? Map<*, *>
                     val answer = data?.get("answer") as? String
@@ -92,20 +113,12 @@ class NoteDetailViewModel @javax.inject.Inject constructor(
     }
 
     fun askAi(question: String) {
-        val currentBalance = (refreshTrigger as? StateFlow<*>)?.let { 100 } ?: 100 // Logic to check wallet
-        // In production, we'd check the balance from a repository StateFlow or local cache
-        
         viewModelScope.launch {
             _isProcessingAi.value = true
             _aiResponse.value = "AI Brain is analyzing your request..."
             repository.askAI(noteId, question).collect { result ->
-                result.onFailure {
-                    if (it.message?.contains("402") == true) {
-                        _aiResponse.value = "Insufficient Credits: Please refill your wallet to continue using Advanced AI features."
-                    } else {
-                        _aiResponse.value = "AI Error: ${it.message}"
-                    }
-                }
+                result.onSuccess { _aiResponse.value = it }
+                result.onFailure { _aiResponse.value = "AI Error: ${it.message}" }
                 _isProcessingAi.value = false
             }
         }
@@ -113,14 +126,13 @@ class NoteDetailViewModel @javax.inject.Inject constructor(
 
     fun updateNote(title: String, summary: String, transcript: String, priority: Priority, status: NoteStatus) {
         viewModelScope.launch {
-            val current = note.value ?: return@launch
-            repository.saveNote(current.copy(
-                title = title, 
-                summary = summary, 
-                transcript = transcript,
-                priority = priority, 
-                status = status
-            ))
+            repository.updateNote(noteId, mapOf(
+                "title" to title,
+                "summary" to summary,
+                "transcript" to transcript,
+                "priority" to priority.name,
+                "status" to status.name
+            )).collect { refreshTrigger.emit(Unit) }
         }
     }
 
@@ -128,45 +140,41 @@ class NoteDetailViewModel @javax.inject.Inject constructor(
         viewModelScope.launch {
             val current = note.value ?: return@launch
             val updatedTranscript = current.transcript.replace("$oldName:", "$newName:")
-            repository.saveNote(current.copy(transcript = updatedTranscript))
+            updateNote(current.title, current.summary, updatedTranscript, current.priority, current.status)
         }
     }
 
     fun deleteNote() {
-        viewModelScope.launch { repository.softDeleteNote(noteId) }
+        viewModelScope.launch {
+            repository.updateNote(noteId, mapOf("is_deleted" to true)).collect { }
+        }
     }
 
     fun updateTask(task: Task, description: String, deadline: Long?, assignedName: String? = null, assignedPhone: String? = null, commType: CommunicationType? = null, imageUrl: String? = null) {
         viewModelScope.launch {
-            repository.updateTask(task.copy(
-                description = description, 
-                deadline = deadline,
-                assignedContactName = assignedName,
-                assignedContactPhone = assignedPhone,
-                communicationType = commType,
-                imageUrl = imageUrl
-            ))
+            repository.updateTask(task.id, mapOf(
+                "description" to description,
+                "deadline" to deadline,
+                "communication_type" to commType?.name
+            )).collect { refreshTrigger.emit(Unit) }
         }
     }
 
     fun toggleTask(task: Task) {
-        viewModelScope.launch { repository.updateTaskStatus(task.id, !task.isDone) }
+        viewModelScope.launch {
+            repository.updateTask(task.id, mapOf("is_done" to !task.isDone)).collect { refreshTrigger.emit(Unit) }
+        }
     }
 
     fun deleteTask(task: Task) {
-        viewModelScope.launch { repository.softDeleteTask(task.id) }
+        viewModelScope.launch {
+            repository.updateTask(task.id, mapOf("is_deleted" to true)).collect { refreshTrigger.emit(Unit) }
+        }
     }
 
     fun approveAction(task: Task) {
-        viewModelScope.launch { repository.updateTask(task.copy(isActionApproved = true)) }
-    }
-
-    companion object {
-        fun provideFactory(noteId: String): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
-            @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return NoteDetailViewModel(noteId) as T
-            }
+        viewModelScope.launch {
+            repository.updateTask(task.id, mapOf("is_action_approved" to true)).collect { refreshTrigger.emit(Unit) }
         }
     }
 }
@@ -174,10 +182,9 @@ class NoteDetailViewModel @javax.inject.Inject constructor(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun NoteDetailScreen(
-    noteId: String,
-    onBack: () -> Unit
+    onBack: () -> Unit,
+    viewModel: NoteDetailViewModel = hiltViewModel()
 ) {
-    val viewModel: NoteDetailViewModel = viewModel(factory = NoteDetailViewModel.provideFactory(noteId))
     val note by viewModel.note.collectAsState()
     val tasks by viewModel.tasks.collectAsState()
     val allActiveTasks by viewModel.allActiveTasks.collectAsState()
@@ -230,7 +237,10 @@ fun NoteDetailScreen(
                         }) { Icon(Icons.Default.PictureAsPdf, contentDescription = "Export PDF") }
                         IconButton(onClick = { shareRecap(context, note, tasks) }) { Icon(Icons.Default.Share, contentDescription = "Share Recap") }
                         IconButton(onClick = { isEditing = true }) { Icon(Icons.Default.Edit, contentDescription = "Edit") }
-                        IconButton(onClick = { viewModel.deleteNote(); onBack() }) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
+                        IconButton(onClick = { 
+                            viewModel.deleteNote()
+                            onBack() 
+                        }) { Icon(Icons.Default.Delete, contentDescription = "Delete", tint = Color.Red) }
                     }
                 }
             )
@@ -362,25 +372,16 @@ fun AudioPlayer(audioUrl: String) {
             mediaPlayer = MediaPlayer().apply {
                 setDataSource(context, Uri.parse(audioUrl))
                 prepareAsync()
-                setOnPreparedListener { 
-                    duration = it.duration
-                }
+                setOnPreparedListener { duration = it.duration }
                 setOnCompletionListener { 
                     isPlaying = false
                     currentPosition = 0
                 }
             }
-        } catch (e: Exception) {
-            e.printStackTrace()
-        }
+        } catch (e: Exception) { e.printStackTrace() }
     }
 
-    DisposableEffect(Unit) {
-        onDispose {
-            mediaPlayer?.release()
-            mediaPlayer = null
-        }
-    }
+    DisposableEffect(Unit) { onDispose { mediaPlayer?.release() } }
 
     LaunchedEffect(isPlaying) {
         while (isPlaying) {
@@ -389,18 +390,11 @@ fun AudioPlayer(audioUrl: String) {
         }
     }
 
-    GlassCard(
-        modifier = Modifier.fillMaxWidth(),
-        intensity = 0.5f
-    ) {
+    GlassCard(modifier = Modifier.fillMaxWidth(), intensity = 0.5f) {
         Column(modifier = Modifier.padding(16.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = {
-                    if (isPlaying) {
-                        mediaPlayer?.pause()
-                    } else {
-                        mediaPlayer?.start()
-                    }
+                    if (isPlaying) mediaPlayer?.pause() else mediaPlayer?.start()
                     isPlaying = !isPlaying
                 }) {
                     Icon(
@@ -418,10 +412,7 @@ fun AudioPlayer(audioUrl: String) {
                     },
                     valueRange = 0f..(duration.toFloat().coerceAtLeast(1f)),
                     modifier = Modifier.weight(1f),
-                    colors = SliderDefaults.colors(
-                        thumbColor = Color(0xFF00E5FF),
-                        activeTrackColor = Color(0xFF00E5FF)
-                    )
+                    colors = SliderDefaults.colors(thumbColor = Color(0xFF00E5FF), activeTrackColor = Color(0xFF00E5FF))
                 )
             }
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -447,10 +438,7 @@ fun AudioTab(note: Note, onRenameSpeaker: (String) -> Unit) {
         regex.findAll(note.transcript).map { it.value.removeSuffix(":") }.distinct().toList()
     }
 
-    LazyColumn(
-        modifier = Modifier.fillMaxSize(),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
+    LazyColumn(modifier = Modifier.fillMaxSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         item {
             note.audioUrl?.let { AudioPlayer(it) }
             Spacer(modifier = Modifier.height(16.dp))
@@ -467,7 +455,6 @@ fun AudioTab(note: Note, onRenameSpeaker: (String) -> Unit) {
             }
         }
         item {
-            // Display transcript with selection support for Ask AI
             SelectionContainer {
                 Text(
                     text = note.transcript.ifEmpty { "No transcript available." },
@@ -480,19 +467,11 @@ fun AudioTab(note: Note, onRenameSpeaker: (String) -> Unit) {
 }
 
 @Composable
-fun SelectionContainer(content: @Composable () -> Unit) {
-    androidx.compose.foundation.text.selection.SelectionContainer {
-        content()
-    }
-}
-
-@Composable
 fun TasksTab(tasks: List<Task>, allActiveTasks: List<Task>, viewModel: NoteDetailViewModel, actionExecutor: ActionExecutor, onEdit: (Task) -> Unit) {
     LazyColumn(verticalArrangement = Arrangement.spacedBy(12.dp)) {
         items(tasks, key = { it.id }) { task ->
             val hasConflict = task.deadline != null && allActiveTasks.any { 
-                it.id != task.id && it.deadline != null && 
-                abs(it.deadline!! - task.deadline!!) < 600000 
+                it.id != task.id && it.deadline != null && abs(it.deadline!! - task.deadline!!) < 600000 
             }
 
             TaskDetailCard(task, hasConflict,
@@ -511,6 +490,7 @@ fun TasksTab(tasks: List<Task>, allActiveTasks: List<Task>, viewModel: NoteDetai
 @Composable
 fun AskAiTab(response: String?, isProcessing: Boolean, onAsk: (String) -> Unit) {
     var question by remember { mutableStateOf("") }
+    val context = LocalContext.current
     Column(modifier = Modifier.fillMaxSize()) {
         GlassyTextField(
             value = question, 
@@ -566,15 +546,9 @@ fun TaskDetailCard(task: Task, hasConflict: Boolean, onToggle: () -> Unit, onEdi
         intensity = if (task.priority == Priority.HIGH) 1.2f else 0.8f
     ) {
         Column(modifier = Modifier.padding(16.dp)) {
-            if (hasConflict) {
-                Text("⚠️ Deadline Conflict Detected", style = MaterialTheme.typography.labelSmall, color = Color.Yellow)
-            }
+            if (hasConflict) Text("⚠️ Deadline Conflict Detected", style = MaterialTheme.typography.labelSmall, color = Color.Yellow)
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(
-                    checked = task.isDone, 
-                    onCheckedChange = { onToggle() },
-                    colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E5FF))
-                )
+                Checkbox(checked = task.isDone, onCheckedChange = { onToggle() }, colors = CheckboxDefaults.colors(checkedColor = Color(0xFF00E5FF)))
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = task.description, style = MaterialTheme.typography.bodyLarge, fontWeight = FontWeight.Bold, color = Color.White)
                     PriorityBadge(priority = task.priority)
@@ -604,13 +578,13 @@ fun TaskDetailCard(task: Task, hasConflict: Boolean, onToggle: () -> Unit, onEdi
             if (!task.isDone) {
                 Row(modifier = Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     AssistantButton("Search", Icons.Default.Search) {
-                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(task.googlePrompt)}")))
+                        context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse("https://www.google.com/search?q=${Uri.encode(task.description)}")))
                     }
                     AssistantButton("ChatGPT", Icons.Default.AutoAwesome) {
-                        copyAndOpen(context, task.aiPrompt, "com.openai.chatgpt", "https://chat.openai.com")
+                        copyAndOpen(context, "Draft for: ${task.description}", "com.openai.chatgpt", "https://chat.openai.com")
                     }
                     AssistantButton("Gemini", Icons.Default.AutoAwesome) {
-                        copyAndOpen(context, task.aiPrompt, "com.google.android.apps.bard", "https://gemini.google.com")
+                        copyAndOpen(context, "Draft for: ${task.description}", "com.google.android.apps.bard", "https://gemini.google.com")
                     }
                 }
                 if (task.assignedContactPhone != null && !task.isActionApproved) {
@@ -658,11 +632,7 @@ private fun sendEmail(context: Context, text: String, subject: String) {
         putExtra(Intent.EXTRA_SUBJECT, subject)
         putExtra(Intent.EXTRA_TEXT, text)
     }
-    try {
-        context.startActivity(intent)
-    } catch (e: Exception) {
-        shareText(context, text, subject)
-    }
+    try { context.startActivity(intent) } catch (e: Exception) { shareText(context, text, subject) }
 }
 
 private fun copyAndOpen(context: Context, text: String, packageName: String, fallbackUrl: String) {
@@ -710,7 +680,7 @@ fun EditTaskDialog(task: Task, contactManager: ContactManager, onDismiss: () -> 
                     }
                 }
                 if (selectedContact != null) {
-                    Text("Action Method:", style = MaterialTheme.typography.labelMedium)
+                    Text("Action Method:", style = MaterialTheme.typography.labelLarge)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(4.dp)) {
                         CommunicationType.entries.forEach { type -> FilterChip(selected = commType == type, onClick = { commType = type }, label = { Text(type.name, style = MaterialTheme.typography.labelSmall) }) }
                     }

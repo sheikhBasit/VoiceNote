@@ -3,6 +3,7 @@ package com.example.voicenote.core.network
 import android.util.Log
 import com.example.voicenote.core.security.SecurityManager
 import com.google.gson.Gson
+import com.google.gson.reflect.TypeToken
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -29,20 +30,20 @@ class WebSocketManager @Inject constructor(
     val updates: SharedFlow<Map<String, Any>> = _updates
 
     fun connect() {
-        val userId = securityManager.getUserId() ?: return
+        val sessionToken = securityManager.getSessionToken() ?: return
         isManuallyClosed = false
         val request = Request.Builder()
-            .url("ws://api.voicenote.ai/api/ws/$userId") // Real-world: Use Secure WSS
+            .url("${com.example.voicenote.core.config.Config.WS_URL}$sessionToken")
             .build()
         
         webSocket = client.newWebSocket(request, this)
-        Log.d("WebSocket", "Connecting for user: $userId")
+        Log.d("WebSocket", "Connecting to ${com.example.voicenote.core.config.Config.WS_URL} for token: $sessionToken")
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {
         scope.launch {
             try {
-                val type = object : com.google.common.reflect.TypeToken<Map<String, Any>>() {}.type
+                val type = object : TypeToken<Map<String, Any>>() {}.type
                 val map: Map<String, Any> = gson.fromJson(text, type)
                 _updates.emit(map)
                 Log.d("WebSocket", "Received: $text")

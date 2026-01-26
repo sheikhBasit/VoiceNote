@@ -1,28 +1,30 @@
 package com.example.voicenote.features.settings
 
 import android.app.Activity
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
 import android.provider.Settings
 import android.util.Patterns
-import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.example.voicenote.ui.components.GlassyTextField
-import com.example.voicenote.ui.theme.GlassyCard
-import com.example.voicenote.ui.theme.GlassyEffects
-import com.example.voicenote.ui.theme.Background
-import com.example.voicenote.ui.theme.Primary
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.voicenote.core.security.SecurityManager
-import com.example.voicenote.core.service.OverlayService
 import com.example.voicenote.data.model.AppConfig
 import com.example.voicenote.data.model.User
 import com.example.voicenote.data.model.UserRole
 import com.example.voicenote.data.repository.FirestoreRepository
+import com.example.voicenote.ui.components.GlassyTextField
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import java.util.*
@@ -66,23 +68,6 @@ class ApiSettingsViewModel(private val repository: FirestoreRepository = Firesto
             ))
         }
     }
-
-    fun addKey(key: String) {
-        viewModelScope.launch {
-            val currentConfig = config.value ?: AppConfig()
-            val newKeys = currentConfig.apiKeys + key
-            repository.updateAppConfig(currentConfig.copy(apiKeys = newKeys))
-        }
-    }
-
-    fun removeKey(index: Int) {
-        viewModelScope.launch {
-            val currentConfig = config.value ?: return@launch
-            val newKeys = currentConfig.apiKeys.toMutableList().apply { removeAt(index) }
-            val newIndex = if (currentConfig.currentKeyIndex >= newKeys.size) 0 else currentConfig.currentKeyIndex
-            repository.updateAppConfig(currentConfig.copy(apiKeys = newKeys, currentKeyIndex = newIndex))
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
@@ -94,7 +79,6 @@ fun ApiSettingsScreen(viewModel: ApiSettingsViewModel = viewModel()) {
     val securityManager = remember { SecurityManager(context) }
     val deviceId = remember { Settings.Secure.getString(context.contentResolver, Settings.Secure.ANDROID_ID) ?: Build.SERIAL }
     
-    var newKey by remember { mutableStateOf("") }
     var editEmail by remember { mutableStateOf("") }
     var customRoleDesc by remember { mutableStateOf("") }
     var isEditingEmail by remember { mutableStateOf(false) }
@@ -147,7 +131,7 @@ fun ApiSettingsScreen(viewModel: ApiSettingsViewModel = viewModel()) {
                             }
                         }
 
-                        Divider(color = MaterialTheme.colorScheme.outlineVariant)
+                        HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
 
                         Text("Primary Role (Mandatory)", style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold)
                         FlowRow(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -310,46 +294,6 @@ fun ApiSettingsScreen(viewModel: ApiSettingsViewModel = viewModel()) {
                     }
                 }
                 Spacer(modifier = Modifier.height(24.dp))
-            }
-
-            // Section: Infrastructure
-            item {
-                Text("API Infrastructure", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.ExtraBold)
-                Spacer(modifier = Modifier.height(12.dp))
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    GlassyTextField(
-                        value = newKey, 
-                        onValueChange = { newKey = it }, 
-                        label = "Add Groq API Key",
-                        modifier = Modifier.weight(1f),
-                        visualTransformation = if (newKey.isNotEmpty()) androidx.compose.ui.text.input.PasswordVisualTransformation() else androidx.compose.ui.text.input.VisualTransformation.None
-                    )
-                    IconButton(
-                        onClick = { if (newKey.isNotBlank()) { viewModel.addKey(newKey); newKey = "" } },
-                        modifier = Modifier.padding(top = 22.dp) // Align with text field box
-                    ) { Icon(Icons.Default.AddCircle, contentDescription = "Add", tint = Primary) }
-                }
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-
-            config?.let { cfg ->
-                itemsIndexed(cfg.apiKeys) { index, key ->
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(vertical = 4.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.2f))
-                    ) {
-                        Row(modifier = Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Column(modifier = Modifier.weight(1f)) {
-                                Text("Node Key ${index + 1}", style = MaterialTheme.typography.labelSmall)
-                                Text(key.take(6) + "****************" + key.takeLast(4), style = MaterialTheme.typography.bodyMedium)
-                                if (index == cfg.currentKeyIndex) {
-                                    Text("Status: Active", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.ExtraBold)
-                                }
-                            }
-                            IconButton(onClick = { viewModel.removeKey(index) }) { Icon(Icons.Default.DeleteForever, contentDescription = "Delete", tint = MaterialTheme.colorScheme.error) }
-                        }
-                    }
-                }
             }
         }
     }

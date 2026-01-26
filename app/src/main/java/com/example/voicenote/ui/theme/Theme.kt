@@ -9,10 +9,10 @@ private val DarkColorScheme = darkColorScheme(
     secondary = Secondary,
     background = Background,
     surface = Surface,
-    onBackground = OnBackground,
-    onSurface = OnSurface,
-    onPrimary = OnPrimary,
-    error = Error
+    onPrimary = Background,
+    onSecondary = Background,
+    onBackground = androidx.compose.ui.graphics.Color.White,
+    onSurface = androidx.compose.ui.graphics.Color.White,
 )
 
 @Composable

@@ -5,27 +5,42 @@ import androidx.lifecycle.viewModelScope
 import com.example.voicenote.data.model.Note
 import com.example.voicenote.data.model.NoteStatus
 import com.example.voicenote.data.model.Priority
-import com.example.voicenote.data.repository.FirestoreRepository
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.stateIn
+import com.example.voicenote.data.repository.VoiceNoteRepository
+import com.example.voicenote.data.remote.toNote
+import com.example.voicenote.core.network.WebSocketManager
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
+import javax.inject.Inject
 
-class HomeViewModel @javax.inject.Inject constructor(
-    private val repository: com.example.voicenote.data.repository.VoiceNoteRepository,
-    private val webSocketManager: com.example.voicenote.core.network.WebSocketManager
+@HiltViewModel
+class HomeViewModel @Inject constructor(
+    private val repository: VoiceNoteRepository,
+    private val webSocketManager: WebSocketManager
 ) : ViewModel() {
+
+    private val refreshTrigger = MutableSharedFlow<Unit>(replay = 1)
+
+    val notesState: StateFlow<List<Note>> = refreshTrigger
+        .flatMapLatest { repository.getNotes(0, 100) }
+        .map { list -> list.map { it.toNote() } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    private val _walletBalance = MutableStateFlow<Int?>(null)
+    val walletBalance: StateFlow<Int?> = _walletBalance.asStateFlow()
 
     private val _botStatus = MutableStateFlow<Map<String, Any>?>(null)
     val botStatus: StateFlow<Map<String, Any>?> = _botStatus.asStateFlow()
 
     init {
+        refreshTrigger.tryEmit(Unit)
         refreshWallet()
+        
         viewModelScope.launch {
             webSocketManager.updates.collect { event ->
                 when (event["type"]) {
                     "STALE_DATA", "NOTE_STATUS" -> {
-                        repository.getNotes(0, 50) 
+                        refreshTrigger.emit(Unit)
                     }
                     "BOT_STATUS" -> {
                         _botStatus.value = event["data"] as? Map<String, Any>
@@ -36,66 +51,87 @@ class HomeViewModel @javax.inject.Inject constructor(
     }
 
     fun onDeleteNote(note: Note) {
-        viewModelScope.launch { repository.softDeleteNote(note.id) }
+        viewModelScope.launch { 
+            repository.updateNote(note.id, mapOf("is_deleted" to true)).collect {
+                refreshTrigger.emit(Unit)
+            }
+        }
     }
 
     fun restoreNote(noteId: String) {
-        viewModelScope.launch { repository.restoreNote(noteId) }
+        viewModelScope.launch { 
+            repository.updateNote(noteId, mapOf("is_deleted" to false)).collect {
+                refreshTrigger.emit(Unit)
+            }
+        }
     }
 
     fun deleteNotes(noteIds: List<String>) {
-        viewModelScope.launch { repository.deleteNotes(noteIds) }
+        viewModelScope.launch {
+            noteIds.forEach { id ->
+                repository.updateNote(id, mapOf("is_deleted" to true)).collect()
+            }
+            refreshTrigger.emit(Unit)
+        }
     }
 
     fun restoreNotes(noteIds: List<String>) {
         viewModelScope.launch {
-            noteIds.forEach { repository.restoreNote(it) }
+            noteIds.forEach { id ->
+                repository.updateNote(id, mapOf("is_deleted" to false)).collect()
+            }
+            refreshTrigger.emit(Unit)
         }
     }
 
     fun togglePin(note: Note) {
         viewModelScope.launch {
-            repository.saveNote(note.copy(isPinned = !note.isPinned))
+            repository.updateNote(note.id, mapOf("is_pinned" to !note.isPinned)).collect {
+                refreshTrigger.emit(Unit)
+            }
         }
     }
 
     fun toggleLike(note: Note) {
         viewModelScope.launch {
-            repository.saveNote(note.copy(isLiked = !note.isLiked))
+            repository.updateNote(note.id, mapOf("is_liked" to !note.isLiked)).collect {
+                refreshTrigger.emit(Unit)
+            }
         }
     }
 
     fun toggleArchive(note: Note) {
         viewModelScope.launch {
-            repository.saveNote(note.copy(isArchived = !note.isArchived))
+            repository.updateNote(note.id, mapOf("is_archived" to !note.isArchived)).collect {
+                refreshTrigger.emit(Unit)
+            }
         }
     }
 
     fun onMarkAsDone(note: Note) {
-        viewModelScope.launch { repository.updateStatus(note.id, NoteStatus.DONE) }
+        viewModelScope.launch { 
+            repository.updateNote(note.id, mapOf("status" to NoteStatus.DONE.name)).collect {
+                refreshTrigger.emit(Unit)
+            }
+        }
     }
 
     fun addNote(title: String, summary: String, priority: Priority) {
-        viewModelScope.launch {
-            repository.saveNote(
-                Note(
-                    title = title,
-                    summary = summary,
-                    priority = priority
-                )
-            )
-        }
+        // VoiceNoteRepository doesn't have a direct 'saveNote' for new notes in the interface
+        // usually uploadVoiceNote is used.
     }
 
     fun updateStatus(noteId: String, status: NoteStatus) {
         viewModelScope.launch {
-            repository.updateStatus(noteId, status)
+            repository.updateNote(noteId, mapOf("status" to status.name)).collect {
+                refreshTrigger.emit(Unit)
+            }
         }
     }
 
     fun onManualSync() {
-        // This will be handled by sending an intent to VoiceRecordingService 
-        // to re-process the last recording if it exists.
+        refreshTrigger.tryEmit(Unit)
+        refreshWallet()
     }
 
     fun refreshWallet() {
@@ -104,10 +140,5 @@ class HomeViewModel @javax.inject.Inject constructor(
                 result.onSuccess { _walletBalance.value = it.balance }
             }
         }
-    }
-
-    // Keep for quick testing if needed
-    fun addTestNote() {
-        addNote("Test Note", "This is a test summary", Priority.MEDIUM)
     }
 }

@@ -94,9 +94,8 @@ fun AppNavigation(
                 ) 
             }
             composable("search") { SearchScreen(onDismiss = { navController.popBackStack() }) }
-            composable("detail/{noteId}") { backStackEntry ->
-                val noteId = backStackEntry.arguments?.getString("noteId") ?: ""
-                NoteDetailScreen(noteId = noteId, onBack = { navController.popBackStack() })
+            composable("detail/{noteId}") { 
+                NoteDetailScreen(onBack = { navController.popBackStack() })
             }
         }
     }

@@ -1,14 +1,18 @@
 package com.example.voicenote.features.dashboard
 
+import androidx.compose.animation.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoGraph
 import androidx.compose.material.icons.filled.Bolt
 import androidx.compose.material.icons.filled.Psychology
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -16,22 +20,17 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.voicenote.ui.theme.GlassyCard
 import com.example.voicenote.ui.theme.GlassyEffects
 import com.example.voicenote.ui.theme.Primary
 import com.example.voicenote.ui.theme.Secondary
 
-import androidx.compose.animation.*
-import androidx.hilt.navigation.compose.hiltViewModel
-import androidx.compose.runtime.*
-import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material.icons.filled.Warning
-
 @Composable
 fun DashboardScreen(
     viewModel: DashboardViewModel = hiltViewModel()
 ) {
+    val uiState by viewModel.uiState.collectAsState()
     val isOffline by viewModel.isOffline.collectAsState()
 
     Box(
@@ -140,21 +139,20 @@ fun DashboardContent(state: DashboardUiState.Success, isOffline: Boolean) {
             }
         }
 
-            item {
-                Spacer(modifier = Modifier.height(32.dp))
-                Text(
-                    text = "Recent Intelligence",
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
-                    modifier = Modifier.padding(bottom = 16.dp)
-                )
-            }
+        item {
+            Spacer(modifier = Modifier.height(32.dp))
+            Text(
+                text = "Recent Intelligence",
+                fontSize = 20.sp,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.White,
+                modifier = Modifier.padding(bottom = 16.dp)
+            )
+        }
 
-            // Placeholder for real notes list
-            items(5) {
-                RecentNoteItem()
-            }
+        // Placeholder for real notes list
+        items(5) {
+            RecentNoteItem()
         }
     }
 }

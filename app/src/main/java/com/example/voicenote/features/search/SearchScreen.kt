@@ -1,12 +1,12 @@
 package com.example.voicenote.features.search
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Send
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -17,7 +17,6 @@ import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.voicenote.ui.components.GlassCard
-import com.example.voicenote.ui.theme.Primary
 
 data class SearchResult(
     val query: String,
@@ -77,7 +76,7 @@ fun SearchScreen(
                     )
                     if (query.isNotEmpty()) {
                         IconButton(onClick = { viewModel.performSearch(query) }) {
-                            Icon(androidx.compose.material.icons.automirrored.filled.Send, contentDescription = "Send", tint = Color(0xFF00E5FF))
+                            Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF00E5FF))
                         }
                     }
                 }

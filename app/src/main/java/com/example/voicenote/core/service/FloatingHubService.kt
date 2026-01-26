@@ -27,7 +27,7 @@ import androidx.compose.ui.platform.ComposeView
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.*
 import androidx.savedstate.setViewTreeSavedStateRegistryOwner
-import com.example.voicenote.features.home.RecordingButton
+import com.example.voicenote.ui.components.RecordingButton
 import com.example.voicenote.ui.theme.VoiceNoteTheme
 
 class FloatingHubService : Service() {

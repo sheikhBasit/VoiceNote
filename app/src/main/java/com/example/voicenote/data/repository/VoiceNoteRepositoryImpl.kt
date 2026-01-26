@@ -20,17 +20,33 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
-                emit(Result.failure(Exception("Sync failed: We encountered an issue while synchronizing your profile. Please try again in a few moments.")))
+                val errorMsg = when (response.code()) {
+                    403 -> "Trial already claimed: This device has already used its free package. Please upgrade to continue."
+                    401 -> "Unauthorized: Your session has expired or is invalid. Please log in again."
+                    404 -> "User not found: We couldn't find an account associated with this email."
+                    409 -> "Conflict: This email is already associated with another device."
+                    500 -> "Server Error: Our AI Brain is taking a nap. Please try again in a few minutes."
+                    else -> "Connection Issue: We're having trouble reaching the server. Please check your internet."
+                }
+                emit(Result.failure(Exception(errorMsg)))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Network error: Please verify your connection and try again.")))
         }
     }
 
     override fun login(email: String, password: String): Flow<Result<SyncResponse>> = flow {
+        // Implementation similar to syncUser for real auth
         try {
-            // In a real app, this would be a proper Auth call
-            val response = api.syncUser(SyncRequest(null)) // Dummy for login implementation
+            val dummyRequest = SyncRequest(
+                name = "User",
+                email = email,
+                token = "dummy_token",
+                deviceId = "dummy_device",
+                deviceModel = "dummy_model",
+                primaryRole = "USER"
+            )
+            val response = api.syncUser(dummyRequest)
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
@@ -47,10 +63,10 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
-                emit(Result.failure(Exception("Request failed: We were unable to fetch your profile information. Please verify your connection.")))
+                emit(Result.failure(Exception("Profile unavailable: We couldn't retrieve your details at this time.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: Unable to fetch profile.")))
         }
     }
 
@@ -60,10 +76,10 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
-                emit(Result.failure(Exception("Configuration update failed: We were unable to synchronize your profile settings. Please verify your connection.")))
+                emit(Result.failure(Exception("Update failed: Your settings couldn't be synchronized.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: Settings not saved.")))
         }
     }
 
@@ -88,11 +104,9 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 emit(response.body() ?: emptyList())
             } else {
-                android.util.Log.e("Repository", "Failed to fetch notes: ${response.code()}")
                 emit(emptyList())
             }
         } catch (e: Exception) {
-            android.util.Log.e("Repository", "Network error in getNotes", e)
             emit(emptyList())
         }
     }
@@ -103,10 +117,10 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
-                emit(Result.failure(Exception("Note unavailable: We could not retrieve the requested note. It may have been deleted or archived.")))
+                emit(Result.failure(Exception("Note not found: This note may have been deleted.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: Could not load note.")))
         }
     }
 
@@ -119,13 +133,14 @@ class VoiceNoteRepositoryImpl @Inject constructor(
                 emit(Result.success(response.body()?.get("note_id") ?: ""))
             } else {
                 val errorMsg = when(response.code()) {
-                    413 -> "File too large: Your recording exceeds the 50MB limit. Please provide a shorter audio clip."
-                    else -> "Processing failed: We were unable to start the AI analysis for this recording. Please try again."
+                    413 -> "Recording too large: Please keep voice notes under 50MB."
+                    429 -> "Too many requests: You've reached your hourly processing limit."
+                    else -> "Processing failed: The AI couldn't analyze this audio. Please try again."
                 }
                 emit(Result.failure(Exception(errorMsg)))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Upload failed: Check your connection and try again.")))
         }
     }
 
@@ -135,10 +150,10 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
-                emit(Result.failure(Exception("Sync failed: Your changes to this note could not be saved to our servers. Please try again shortly.")))
+                emit(Result.failure(Exception("Save failed: Changes couldn't be synced.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: Note not updated.")))
         }
     }
 
@@ -148,10 +163,10 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 emit(Result.success(response.body()?.get("message") ?: "AI is thinking..."))
             } else {
-                emit(Result.failure(Exception("AI Unavailable: The AI Brain is temporarily unreachable. Please try your question again shortly.")))
+                emit(Result.failure(Exception("AI Busy: The Brain is currently overloaded. Try again in a second.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: AI unreachable.")))
         }
     }
 
@@ -183,10 +198,10 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful && response.body() != null) {
                 emit(Result.success(response.body()!!))
             } else {
-                emit(Result.failure(Exception("Task modified locally: We saved your changes but could not sync them with the server. They will sync automatically when your connection is stable.")))
+                emit(Result.failure(Exception("Task sync failed: Change saved locally only.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: Task not updated.")))
         }
     }
 
@@ -198,10 +213,36 @@ class VoiceNoteRepositoryImpl @Inject constructor(
             if (response.isSuccessful) {
                 emit(Result.success(response.body()?.get("message") ?: "Uploaded"))
             } else {
-                emit(Result.failure(Exception("Multimedia upload failed")))
+                emit(Result.failure(Exception("Image upload failed.")))
             }
         } catch (e: Exception) {
-            emit(Result.failure(e))
+            emit(Result.failure(Exception("Connection error: Image not uploaded.")))
+        }
+    }
+
+    override fun getWallet(): Flow<Result<WalletDTO>> = flow {
+        try {
+            val response = api.getWallet("me")
+            if (response.isSuccessful && response.body() != null) {
+                emit(Result.success(response.body()!!))
+            } else {
+                emit(Result.failure(Exception("Wallet error: Unable to load balance.")))
+            }
+        } catch (e: Exception) {
+            emit(Result.failure(Exception("Connection error: Wallet unreachable.")))
+        }
+    }
+
+    override fun topUpWallet(amount: Int): Flow<Result<String>> = flow {
+        try {
+            val response = api.createCheckoutSession("me", amount)
+            if (response.isSuccessful) {
+                emit(Result.success(response.body()?.get("checkout_url") ?: ""))
+            } else {
+                emit(Result.failure(Exception("Payment failed: Couldn't start checkout.")))
+            }
+        } catch (e: Exception) {
+            emit(Result.failure(Exception("Connection error: Payment server unreachable.")))
         }
     }
 }
