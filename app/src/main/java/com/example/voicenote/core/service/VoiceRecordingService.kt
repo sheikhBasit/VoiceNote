@@ -45,6 +45,9 @@ class VoiceRecordingService : Service() {
                 val amp = try { mediaRecorder?.maxAmplitude ?: 0 } catch (e: Exception) { 0 }
                 _amplitude.value = amp
                 
+                // VAD pausing logic is disabled to ensure "Complete Audio" is captured 
+                // without gaps during silence.
+                /*
                 if (amp < SILENCE_THRESHOLD && !isPausedBySilence) {
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                         try {
@@ -62,6 +65,7 @@ class VoiceRecordingService : Service() {
                         } catch (e: Exception) { Log.e("VAD", "Resume failed") }
                     }
                 }
+                */
                 handler.postDelayed(this, VAD_CHECK_INTERVAL)
             }
         }
@@ -114,7 +118,8 @@ class VoiceRecordingService : Service() {
             currentMeetingTitle = getCurrentCalendarEvent()
             
             val persistentDir = getExternalFilesDir(null) ?: filesDir
-            audioFile = File(persistentDir, "recording_${System.currentTimeMillis()}.mp4")
+            // Changed extension to .m4a to match backend requirements and common standards
+            audioFile = File(persistentDir, "recording_${System.currentTimeMillis()}.m4a")
             
             mediaRecorder = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                 MediaRecorder(this)
