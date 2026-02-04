@@ -5,6 +5,7 @@ import com.example.voicenote.data.remote.ApiService
 import com.example.voicenote.data.remote.HmacInterceptor
 import com.example.voicenote.core.network.ConnectivityObserver
 import android.content.Context
+import com.example.voicenote.BuildConfig
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import dagger.Module
@@ -24,7 +25,7 @@ import com.example.voicenote.core.config.Config
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
 
-    private const val HMAC_SECRET = "REPLACE_WITH_SECURE_VAULT_KEY"
+    private const val HMAC_SECRET = "VN_SECURE_8f7d9a2b_2026"
 
     @Provides
     @Singleton
@@ -42,7 +43,11 @@ object NetworkModule {
     @Singleton
     fun provideOkHttpClient(securityManager: SecurityManager): OkHttpClient {
         val logging = HttpLoggingInterceptor().apply {
-            level = HttpLoggingInterceptor.Level.BODY
+            level = if (BuildConfig.DEBUG) {
+                HttpLoggingInterceptor.Level.BODY
+            } else {
+                HttpLoggingInterceptor.Level.BASIC
+            }
         }
         
         return OkHttpClient.Builder()

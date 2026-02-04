@@ -27,7 +27,7 @@ android {
         versionCode = 1
         versionName = "1.0"
 
-        testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+        testInstrumentationRunner = "com.example.voicenote.HiltTestRunner"
     }
 
     buildTypes {
@@ -53,6 +53,14 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+    packaging {
+        resources {
+            excludes += "/META-INF/{AL2.0,LGPL2.1}"
+            merges += "META-INF/LICENSE.md"
+            merges += "META-INF/LICENSE-notice.md"
+        }
     }
 }
 
@@ -72,13 +80,10 @@ dependencies {
     kapt(libs.hiltCompiler)
     implementation(libs.hiltNavigationCompose)
 
-    testImplementation(libs.junit)
-    androidTestImplementation(libs.androidx.junit)
-    androidTestImplementation(libs.androidx.espresso.core)
-    androidTestImplementation(platform(libs.androidx.compose.bom))
-    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
-    debugImplementation(libs.androidx.compose.ui.tooling)
-    debugImplementation(libs.androidx.compose.ui.test.manifest)
+    // Room
+    implementation(libs.roomRuntime)
+    kapt(libs.roomCompiler)
+    implementation(libs.roomKtx)
 
     implementation(libs.appcompat)
     implementation(libs.viewmodelCompose)
@@ -109,4 +114,19 @@ dependencies {
     // Coroutines
     implementation(libs.coroutinesAndroid)
     implementation(libs.coroutinesPlayServices)
+
+    // Testing
+    testImplementation(libs.junit)
+    testImplementation(libs.mockk)
+    androidTestImplementation(libs.androidx.junit)
+    androidTestImplementation(libs.androidx.espresso.core)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.compose.ui.test.junit4)
+    androidTestImplementation(libs.hilt.android.testing)
+    kaptAndroidTest(libs.hiltCompiler)
+    androidTestImplementation(libs.mockk.android)
+    androidTestImplementation(libs.androidx.uiautomator)
+    
+    debugImplementation(libs.androidx.compose.ui.tooling)
+    debugImplementation(libs.androidx.compose.ui.test.manifest)
 }

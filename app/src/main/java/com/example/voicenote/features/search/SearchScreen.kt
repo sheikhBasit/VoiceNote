@@ -14,109 +14,157 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.lifecycle.ViewModel
+import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.hilt.navigation.compose.hiltViewModel
+import dagger.hilt.android.lifecycle.HiltViewModel
+import kotlinx.coroutines.launch
+import javax.inject.Inject
+import com.example.voicenote.data.repository.VoiceNoteRepository
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material.icons.filled.AutoAwesome
+import androidx.compose.material.icons.filled.ChevronLeft
+import androidx.compose.material.icons.filled.Mic
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
+import com.example.voicenote.ui.theme.*
 import com.example.voicenote.ui.components.GlassCard
-
-data class SearchResult(
-    val query: String,
-    val answer: String,
-    val source: String,
-    val localResults: List<String> = emptyList(),
-    val webResults: List<String> = emptyList()
-)
-
-class SearchViewModel : ViewModel() {
-    var searchResult by mutableStateOf<SearchResult?>(null)
-    var isSearching by mutableStateOf(false)
-
-    fun performSearch(query: String) {
-        if (query.isBlank()) return
-        isSearching = true
-        // Logic to call Backend V-RAG API would go here
-        // For now, simulating response
-    }
-}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SearchScreen(
-    viewModel: SearchViewModel = viewModel(),
+    initialQuery: String? = null,
+    viewModel: SearchViewModel = hiltViewModel(),
     onDismiss: () -> Unit
 ) {
-    var query by remember { mutableStateOf("") }
+    var query by remember { mutableStateOf(initialQuery ?: "") }
 
-    Scaffold(
-        topBar = {
-            GlassCard(
+    LaunchedEffect(initialQuery) {
+        if (!initialQuery.isNullOrBlank()) {
+            viewModel.performSearch(initialQuery)
+        }
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(
+                Brush.radialGradient(
+                    0.0f to InsightsPrimary.copy(alpha = 0.15f),
+                    1.0f to Color.Transparent,
+                    center = androidx.compose.ui.geometry.Offset(0f, 0f),
+                    radius = 1000f
+                )
+            )
+            .background(InsightsBackgroundDark)
+            .windowInsetsPadding(WindowInsets.statusBars) // Avoid status bar overlap
+    ) {
+        Column(modifier = Modifier.fillMaxSize()) {
+            Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(16.dp),
-                intensity = 0.5f
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onDismiss) {
-                        Icon(Icons.Default.Search, contentDescription = "Close", tint = Color(0xFF00E5FF))
-                    }
-                    TextField(
-                        value = query,
-                        onValueChange = { query = it },
-                        placeholder = { Text("Ask your notes anything...", color = Color.White.copy(alpha = 0.5f)) },
-                        modifier = Modifier.weight(1f),
-                        colors = TextFieldDefaults.colors(
-                            focusedContainerColor = Color.Transparent,
-                            unfocusedContainerColor = Color.Transparent,
-                            cursorColor = Color(0xFF00E5FF),
-                            focusedIndicatorColor = Color.Transparent,
-                            unfocusedIndicatorColor = Color.Transparent,
-                            focusedTextColor = Color.White,
-                            unfocusedTextColor = Color.White
-                        ),
-                        singleLine = true
-                    )
-                    if (query.isNotEmpty()) {
-                        IconButton(onClick = { viewModel.performSearch(query) }) {
-                            Icon(Icons.Default.Send, contentDescription = "Send", tint = Color(0xFF00E5FF))
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape).background(InsightsGlassWhite).border(1.dp, InsightsGlassBorder, CircleShape).clickable { onDismiss() },
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.ChevronLeft, contentDescription = "Back", tint = Color.White)
+                }
+                Text("Semantic Search", color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Box(
+                    modifier = Modifier.size(40.dp).clip(CircleShape).background(InsightsGlassWhite).border(1.dp, InsightsGlassBorder, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = InsightsPrimary)
+                }
+            }
+
+            Box(modifier = Modifier.padding(horizontal = 16.dp, vertical = 16.dp)) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(56.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(InsightsGlassWhite)
+                        .border(1.dp, InsightsGlassBorder, RoundedCornerShape(16.dp))
+                ) {
+                    Row(
+                        modifier = Modifier.padding(horizontal = 16.dp).fillMaxSize(),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Icon(Icons.Default.Search, contentDescription = null, tint = Color(0xFFa19db9))
+                        Spacer(modifier = Modifier.width(16.dp))
+                        TextField(
+                            value = query,
+                            onValueChange = { query = it },
+                            placeholder = { Text("Search your brain...", color = Color(0xFFa19db9)) },
+                            modifier = Modifier.weight(1f),
+                            colors = TextFieldDefaults.colors(
+                                focusedContainerColor = Color.Transparent,
+                                unfocusedContainerColor = Color.Transparent,
+                                cursorColor = InsightsPrimary,
+                                focusedIndicatorColor = Color.Transparent,
+                                unfocusedIndicatorColor = Color.Transparent,
+                                focusedTextColor = Color.White,
+                                unfocusedTextColor = Color.White
+                            ),
+                            singleLine = true
+                        )
+                        if (query.isNotEmpty()) {
+                             IconButton(onClick = { viewModel.performSearch(query) }) {
+                                Icon(Icons.Default.Send, contentDescription = "Search", tint = InsightsPrimary)
+                            }
+                        } else {
+                            Icon(Icons.Default.Mic, contentDescription = null, tint = Color(0xFFa19db9))
                         }
                     }
                 }
             }
-        }
-    ) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
+            
             if (viewModel.isSearching) {
-                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = InsightsPrimary)
             }
 
             viewModel.searchResult?.let { result ->
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize().padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(16.dp)
+                    modifier = Modifier.fillMaxSize().padding(horizontal = 16.dp),
+                    contentPadding = PaddingValues(bottom = 32.dp + WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding())
                 ) {
                     item {
-                        GlassCard(intensity = 0.8f) {
-                            Text("AI SYNTHESIS", style = MaterialTheme.typography.labelSmall, color = Color(0xFF00E5FF), fontWeight = FontWeight.Bold)
-                            Spacer(Modifier.height(8.dp))
-                            Text(result.answer, style = MaterialTheme.typography.bodyLarge, color = Color.White)
-                            Spacer(Modifier.height(12.dp))
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Icon(
-                                    if (result.source == "local") Icons.Default.Search else Icons.Default.Language,
-                                    contentDescription = null,
-                                    modifier = Modifier.size(16.dp),
-                                    tint = Color.White.copy(alpha = 0.6f)
-                                )
-                                Spacer(Modifier.width(6.dp))
-                                Text("Powered by ${result.source.uppercase()}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
-                            }
+                        GlassCard(intensity = 0.8f, modifier = Modifier.padding(bottom = 16.dp)) {
+                             Column(modifier = Modifier.padding(16.dp)) {
+                                Text("AI SYNTHESIS", style = MaterialTheme.typography.labelSmall, color = InsightsPrimary, fontWeight = FontWeight.Bold)
+                                Spacer(Modifier.height(8.dp))
+                                Text(result.answer, style = MaterialTheme.typography.bodyLarge, color = Color.White)
+                                Spacer(Modifier.height(12.dp))
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (result.source == "local") Icons.Default.Search else Icons.Default.Language,
+                                        contentDescription = null,
+                                        modifier = Modifier.size(16.dp),
+                                        tint = Color.White.copy(alpha = 0.6f)
+                                    )
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Powered by ${result.source.uppercase()}", style = MaterialTheme.typography.labelSmall, color = Color.White.copy(alpha = 0.6f))
+                                }
+                             }
                         }
                     }
                     
                     if (result.localResults.isNotEmpty()) {
-                        item { Text("Contextual References", style = MaterialTheme.typography.titleSmall, color = Color.White.copy(alpha = 0.8f)) }
+                        item { Text("Contextual References", style = MaterialTheme.typography.titleSmall, color = Color.White.copy(alpha = 0.8f), modifier = Modifier.padding(bottom = 12.dp)) }
                         items(result.localResults) { note ->
-                            GlassCard(intensity = 0.4f) {
-                                Text(note, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f))
+                            GlassCard(intensity = 0.4f, modifier = Modifier.padding(bottom = 8.dp)) {
+                                Text(note, style = MaterialTheme.typography.bodyMedium, color = Color.White.copy(alpha = 0.9f), modifier = Modifier.padding(16.dp))
                             }
                         }
                     }

@@ -1,11 +1,17 @@
 package com.example.voicenote.features.settings
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.provider.Settings
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.voicenote.core.security.SecurityManager
+import com.example.voicenote.core.service.OverlayService
 import com.example.voicenote.data.remote.UserDTO
 import com.example.voicenote.data.repository.VoiceNoteRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
+import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -13,7 +19,8 @@ import javax.inject.Inject
 @HiltViewModel
 class SettingsViewModel @Inject constructor(
     private val repository: VoiceNoteRepository,
-    private val securityManager: SecurityManager
+    private val securityManager: SecurityManager,
+    @ApplicationContext private val context: Context
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<SettingsUiState>(SettingsUiState.Loading)
@@ -21,6 +28,9 @@ class SettingsViewModel @Inject constructor(
 
     private val _isUpdating = MutableStateFlow(false)
     val isUpdating: StateFlow<Boolean> = _isUpdating.asStateFlow()
+
+    private val _isFloatingEnabled = MutableStateFlow(securityManager.isFloatingButtonEnabled())
+    val isFloatingEnabled: StateFlow<Boolean> = _isFloatingEnabled.asStateFlow()
 
     init {
         loadSettings()
@@ -47,6 +57,22 @@ class SettingsViewModel @Inject constructor(
                     }
                 }
             }
+        }
+    }
+
+    fun isFloatingButtonEnabled(): Boolean = _isFloatingEnabled.value
+
+    fun setFloatingButtonEnabled(enabled: Boolean) {
+        securityManager.setFloatingButtonEnabled(enabled)
+        _isFloatingEnabled.value = enabled
+        
+        val intent = Intent(context, OverlayService::class.java)
+        if (enabled) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && Settings.canDrawOverlays(context)) {
+                context.startService(intent)
+            }
+        } else {
+            context.stopService(intent)
         }
     }
 

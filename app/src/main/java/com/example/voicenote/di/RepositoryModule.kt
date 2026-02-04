@@ -17,9 +17,10 @@ object RepositoryModule {
     @Provides
     @Singleton
     fun provideVoiceNoteRepository(
+        @dagger.hilt.android.qualifiers.ApplicationContext context: android.content.Context,
         apiService: ApiService,
         webSocketManager: WebSocketManager
     ): VoiceNoteRepository {
-        return VoiceNoteRepositoryImpl(apiService, webSocketManager)
+        return VoiceNoteRepositoryImpl(context, apiService, webSocketManager)
     }
 }

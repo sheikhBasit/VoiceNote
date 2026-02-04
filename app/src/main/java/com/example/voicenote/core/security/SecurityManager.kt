@@ -6,6 +6,8 @@ import android.security.keystore.KeyGenParameterSpec
 import android.security.keystore.KeyProperties
 import androidx.security.crypto.EncryptedSharedPreferences
 import androidx.security.crypto.MasterKey
+import com.example.voicenote.data.remote.UserDTO
+import com.google.gson.Gson
 import java.security.KeyStore
 import java.util.*
 import javax.crypto.Cipher
@@ -14,6 +16,7 @@ import javax.crypto.SecretKey
 
 class SecurityManager(context: Context) {
 
+    private val gson = Gson()
     private val masterKey = MasterKey.Builder(context)
         .setKeyScheme(MasterKey.KeyScheme.AES256_GCM)
         .build()
@@ -29,9 +32,11 @@ class SecurityManager(context: Context) {
     companion object {
         private const val KEY_USER_TOKEN = "user_session_token"
         private const val KEY_USER_EMAIL = "user_email"
+        private const val KEY_USER_DATA = "user_profile_data"
         private const val KEY_NAME = "biometric_key"
         private const val KEY_BIOMETRIC_ENABLED = "biometric_enabled"
         private const val KEY_BIOMETRIC_BYPASSED = "biometric_bypassed"
+        private const val KEY_FLOATING_BUTTON_ENABLED = "floating_button_enabled"
     }
 
     fun getSessionToken(): String? {
@@ -50,6 +55,21 @@ class SecurityManager(context: Context) {
         sharedPreferences.edit().putString(KEY_USER_EMAIL, email).apply()
     }
 
+    fun getUserData(): UserDTO? {
+        val json = sharedPreferences.getString(KEY_USER_DATA, null) ?: return null
+        return try {
+            gson.fromJson(json, UserDTO::class.java)
+        } catch (e: Exception) {
+            null
+        }
+    }
+
+    fun saveUserData(user: UserDTO) {
+        val json = gson.toJson(user)
+        sharedPreferences.edit().putString(KEY_USER_DATA, json).apply()
+        saveUserEmail(user.email)
+    }
+
     fun isBiometricEnabled(): Boolean {
         return sharedPreferences.getBoolean(KEY_BIOMETRIC_ENABLED, true)
     }
@@ -66,6 +86,14 @@ class SecurityManager(context: Context) {
         sharedPreferences.edit().putBoolean(KEY_BIOMETRIC_BYPASSED, bypassed).apply()
     }
 
+    fun isFloatingButtonEnabled(): Boolean {
+        return sharedPreferences.getBoolean(KEY_FLOATING_BUTTON_ENABLED, true)
+    }
+
+    fun setFloatingButtonEnabled(enabled: Boolean) {
+        sharedPreferences.edit().putBoolean(KEY_FLOATING_BUTTON_ENABLED, enabled).apply()
+    }
+
     fun generateNewToken(): String {
         val token = UUID.randomUUID().toString()
         saveSessionToken(token)
@@ -75,6 +103,8 @@ class SecurityManager(context: Context) {
     fun clearSession() {
         sharedPreferences.edit()
             .remove(KEY_USER_TOKEN)
+            .remove(KEY_USER_DATA)
+            .remove(KEY_USER_EMAIL)
             .remove(KEY_BIOMETRIC_BYPASSED)
             .apply()
     }

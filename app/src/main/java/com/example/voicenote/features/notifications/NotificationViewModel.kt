@@ -49,8 +49,8 @@ class NotificationViewModel @Inject constructor(
                     list.add(NotificationItem(
                         id = note.id,
                         title = "Recent Note",
-                        message = note.title ?: "Untitled Transcription",
-                        timestamp = note.createdAt ?: System.currentTimeMillis(),
+                        message = if (note.title.isBlank()) "Untitled Transcription" else note.title,
+                        timestamp = note.timestamp,
                         type = NotificationType.NOTE,
                         targetId = note.id
                     ))

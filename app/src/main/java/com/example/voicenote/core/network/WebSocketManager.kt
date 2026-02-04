@@ -31,13 +31,14 @@ class WebSocketManager @Inject constructor(
 
     fun connect() {
         val sessionToken = securityManager.getSessionToken() ?: return
+        val userData = securityManager.getUserData() ?: return
         isManuallyClosed = false
         val request = Request.Builder()
-            .url("${com.example.voicenote.core.config.Config.WS_URL}$sessionToken")
+            .url("${com.example.voicenote.core.config.Config.WS_URL}${userData.id}?token=$sessionToken")
             .build()
         
         webSocket = client.newWebSocket(request, this)
-        Log.d("WebSocket", "Connecting to ${com.example.voicenote.core.config.Config.WS_URL} for token: $sessionToken")
+        Log.d("WebSocket", "Connecting to Secure WS for User: ${userData.id}")
     }
 
     override fun onMessage(webSocket: WebSocket, text: String) {

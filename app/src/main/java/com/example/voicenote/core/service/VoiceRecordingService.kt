@@ -36,7 +36,7 @@ class VoiceRecordingService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private var currentMeetingTitle: String? = null
 
-    private val SILENCE_THRESHOLD = 800 
+    private val SILENCE_THRESHOLD = 400 
     private val VAD_CHECK_INTERVAL = 50L 
 
     private val vadRunnable = object : Runnable {
@@ -87,6 +87,9 @@ class VoiceRecordingService : Service() {
 
         private val _transcriptionHistory = MutableStateFlow<List<String>>(emptyList())
         val transcriptionHistory: StateFlow<List<String>> = _transcriptionHistory
+        
+        private val _recordingStartTime = MutableStateFlow<Long>(0L)
+        val recordingStartTime: StateFlow<Long> = _recordingStartTime
     }
 
     override fun onCreate() {
@@ -97,7 +100,7 @@ class VoiceRecordingService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
-            ACTION_STOP_RECORDING -> stopRecordingAndProcess()
+            ACTION_STOP_RECORDING, "STOP" -> stopRecordingAndProcess()
             ACTION_DISCARD_RECORDING -> discardRecording()
             else -> startRecording()
         }
@@ -121,9 +124,9 @@ class VoiceRecordingService : Service() {
                 setAudioSource(MediaRecorder.AudioSource.VOICE_RECOGNITION)
                 setOutputFormat(MediaRecorder.OutputFormat.MPEG_4)
                 setAudioEncoder(MediaRecorder.AudioEncoder.AAC)
-                setAudioChannels(1)
-                setAudioSamplingRate(44100)
-                setAudioEncodingBitRate(96000)
+                setAudioChannels(1) // Mono only
+                setAudioSamplingRate(16000) // 16kHz for STT consistency
+                setAudioEncodingBitRate(64000)
                 setOutputFile(audioFile?.absolutePath)
                 prepare()
                 start()
@@ -131,11 +134,18 @@ class VoiceRecordingService : Service() {
 
             enableAudioEffects()
             _isRecording.value = true
+            _recordingStartTime.value = System.currentTimeMillis()
             _statusLog.value = if (currentMeetingTitle != null) "Archiving: $currentMeetingTitle" else "Capture active: Recording in progress..."
             isPausedBySilence = false
             handler.postDelayed(vadRunnable, VAD_CHECK_INTERVAL)
             triggerHapticFeedback(true)
-            startForeground(NOTIFICATION_ID, createNotification("Capturing: ${currentMeetingTitle ?: "Meeting Voice"}"))
+            
+            val notificationContent = if (currentMeetingTitle != null) {
+                "Capturing: $currentMeetingTitle\n💡 Tip: Place phone on soft surface for better audio."
+            } else {
+                "Meeting Voice Capture\n💡 Tip: Point bottom mic toward speaker."
+            }
+            startForeground(NOTIFICATION_ID, createNotification(notificationContent))
         } catch (e: Exception) {
             Log.e("VoiceRecordingService", "Failed to start recording", e)
             _statusLog.value = "System Error: Failed to initialize recording hardware."
@@ -200,10 +210,14 @@ class VoiceRecordingService : Service() {
         try {
             handler.removeCallbacks(vadRunnable)
             mediaRecorder?.apply {
-                if (isPausedBySilence && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                    resume()
+                try {
+                    if (isPausedBySilence && Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                        resume()
+                    }
+                    stop()
+                } catch (e: Exception) {
+                    Log.e("VoiceRecordingService", "Stop failed", e)
                 }
-                stop()
                 release()
             }
             mediaRecorder = null
@@ -223,6 +237,17 @@ class VoiceRecordingService : Service() {
                     }.onFailure { error ->
                         _statusLog.value = "Synchronization failed: ${error.message}"
                         triggerErrorHaptic()
+                        
+                        // Save as draft
+                        try {
+                            val draftsDir = File(getExternalFilesDir(null) ?: filesDir, "drafts")
+                            if (!draftsDir.exists()) draftsDir.mkdirs()
+                            val draftFile = File(draftsDir, file.name)
+                            file.renameTo(draftFile)
+                            Log.i("VoiceNote", "Saved as draft: ${draftFile.absolutePath}")
+                        } catch (e: Exception) {
+                            Log.e("VoiceNote", "Failed to save draft", e)
+                        }
                     }
                     
                     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {

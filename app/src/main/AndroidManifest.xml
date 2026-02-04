@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.READ_CONTACTS" />
     <uses-permission android:name="android.permission.CALL_PHONE" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
 
     <queries>
         <intent>
@@ -29,6 +31,7 @@
 
     <application
         android:name=".VoiceNoteApp"
+        android:usesCleartextTraffic="true"
         android:allowBackup="true"
         android:dataExtractionRules="@xml/data_extraction_rules"
         android:fullBackupContent="@xml/backup_rules"
@@ -56,6 +59,13 @@
 
         <service
             android:name=".core.service.OverlayService"
+            android:enabled="true"
+            android:exported="false"
+            android:process=":overlay_process"
+            android:foregroundServiceType="specialUse" />
+
+        <service
+            android:name=".core.service.FloatingHubService"
             android:enabled="true"
             android:exported="false" />
 

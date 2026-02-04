@@ -34,5 +34,7 @@ data class Note(
     var isLiked: Boolean = false,
     @get:PropertyName("isArchived")
     @set:PropertyName("isArchived")
-    var isArchived: Boolean = false
+    var isArchived: Boolean = false,
+    val documentUris: List<String> = emptyList(),
+    val imageUris: List<String> = emptyList()
 )

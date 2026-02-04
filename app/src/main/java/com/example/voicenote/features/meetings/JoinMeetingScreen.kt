@@ -1,5 +1,6 @@
 package com.example.voicenote.features.meetings
 
+import android.widget.Toast
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -10,7 +11,9 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.hilt.navigation.compose.hiltViewModel
 import com.example.voicenote.ui.components.GlassCard
@@ -19,11 +22,20 @@ import com.example.voicenote.ui.components.GlassCard
 @Composable
 fun JoinMeetingScreen(
     onBack: () -> Unit,
-    onBotDispatched: () -> Unit
+    onBotDispatched: () -> Unit,
+    viewModel: MeetingViewModel = hiltViewModel()
 ) {
     var meetingUrl by remember { mutableStateOf("") }
     var botName by remember { mutableStateOf("VoiceNote Assistant") }
-    var isDispatching by remember { mutableStateOf(false) }
+    val isDispatching by viewModel.isDispatching.collectAsState()
+    val error by viewModel.error.collectAsState()
+    val context = LocalContext.current
+
+    LaunchedEffect(error) {
+        error?.let {
+            Toast.makeText(context, it, Toast.LENGTH_LONG).show()
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -65,7 +77,7 @@ fun JoinMeetingScreen(
                 "Paste your Zoom, Meet, or Teams link below. Our bot will join, record, and summarize the session for you.",
                 style = MaterialTheme.typography.bodyMedium,
                 color = Color.White.copy(alpha = 0.7f),
-                textAlign = androidx.compose.ui.text.style.TextAlign.Center
+                textAlign = TextAlign.Center
             )
 
             GlassCard {
@@ -91,10 +103,10 @@ fun JoinMeetingScreen(
 
             Button(
                 onClick = { 
-                    isDispatching = true
-                    // In production: viewModel.joinMeeting(meetingUrl, botName)
-                    // For now, simulate success
-                    onBotDispatched()
+                    viewModel.joinMeeting(meetingUrl, botName) {
+                        Toast.makeText(context, "Bot dispatched! It will join shortly.", Toast.LENGTH_LONG).show()
+                        onBotDispatched()
+                    }
                 },
                 modifier = Modifier.fillMaxWidth().height(56.dp),
                 enabled = meetingUrl.isNotBlank() && !isDispatching,

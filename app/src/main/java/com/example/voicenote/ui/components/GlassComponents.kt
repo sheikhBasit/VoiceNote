@@ -15,8 +15,10 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import com.example.voicenote.ui.theme.GlassBackground
 import com.example.voicenote.ui.theme.GlassBorder
 
@@ -24,23 +26,41 @@ import com.example.voicenote.ui.theme.GlassBorder
 fun GlassCard(
     modifier: Modifier = Modifier,
     intensity: Float = 1f,
+    color: Color = GlassBackground.copy(alpha = 0.15f * intensity),
+    borderColor: Color? = null,
+    backgroundImageUrl: String? = null,
     content: @Composable ColumnScope.() -> Unit
 ) {
+    val borderModifier = if (borderColor != null) {
+        Modifier.border(1.dp, borderColor, RoundedCornerShape(24.dp))
+    } else {
+        Modifier.border(
+            width = 1.dp,
+            brush = Brush.verticalGradient(
+                colors = listOf(
+                    Color.White.copy(alpha = 0.2f),
+                    Color.White.copy(alpha = 0.05f)
+                )
+            ),
+            shape = RoundedCornerShape(24.dp)
+        )
+    }
+
     Box(
         modifier = modifier
             .clip(RoundedCornerShape(24.dp))
-            .background(GlassBackground.copy(alpha = 0.15f * intensity))
-            .border(
-                width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.2f),
-                        Color.White.copy(alpha = 0.05f)
-                    )
-                ),
-                shape = RoundedCornerShape(24.dp)
-            )
+            .background(color)
+            .then(borderModifier)
     ) {
+        if (backgroundImageUrl != null) {
+            AsyncImage(
+                model = backgroundImageUrl,
+                contentDescription = null,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+
         // Subtle Sheen
         Box(
             modifier = Modifier

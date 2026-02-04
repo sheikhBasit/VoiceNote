@@ -20,9 +20,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.dp
 import com.example.voicenote.core.service.VoiceRecordingService
+import com.example.voicenote.ui.theme.InsightsPrimary
 
 @Composable
-fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
+fun RecordingButton(isRecording: Boolean, onClick: () -> Unit, isSmall: Boolean = false) {
     val amplitude by VoiceRecordingService.amplitude.collectAsState()
     val animatedAmplitude by animateFloatAsState(
         targetValue = if (isRecording) (amplitude / 32767f).coerceIn(0f, 1f) else 0f,
@@ -40,17 +41,21 @@ fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
         ), label = "pulseScale"
     )
 
+    val buttonSize = if (isSmall) 32.dp else 56.dp
+    val iconSize = if (isSmall) 16.dp else 24.dp
+    val glowBaseSize = if (isSmall) 40.dp else 64.dp
+
     Box(contentAlignment = Alignment.Center) {
         if (isRecording) {
             // Layer 1: Base Flow
             Box(
                 modifier = Modifier
-                    .size(64.dp)
+                    .size(glowBaseSize)
                     .scale(pulseScale + (animatedAmplitude * 0.4f))
                     .background(
                         brush = Brush.radialGradient(
                             colors = listOf(
-                                Color(0xFF00E5FF).copy(alpha = 0.3f),
+                                Color(0xFFFF5252).copy(alpha = 0.3f),
                                 Color.Transparent
                             )
                         ),
@@ -61,28 +66,12 @@ fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
             // Layer 2: Rapid Ripple (Sync with Amplitude)
             Box(
                 modifier = Modifier
-                    .size(60.dp)
+                    .size(glowBaseSize - 4.dp)
                     .scale(1f + (animatedAmplitude * 1.2f))
                     .border(
                         width = 1.dp,
                         brush = Brush.linearGradient(
-                            colors = listOf(Color(0xFF00E5FF).copy(alpha = 0.5f), Color.Transparent)
-                        ),
-                        shape = CircleShape
-                    )
-            )
-
-            // Layer 3: Outer Glow
-            Box(
-                modifier = Modifier
-                    .size(72.dp)
-                    .scale(pulseScale * 1.1f)
-                    .background(
-                        brush = Brush.radialGradient(
-                            colors = listOf(
-                                Color(0xFF00E5FF).copy(alpha = 0.1f),
-                                Color.Transparent
-                            )
+                            colors = listOf(Color(0xFFFF5252).copy(alpha = 0.5f), Color.Transparent)
                         ),
                         shape = CircleShape
                     )
@@ -91,15 +80,15 @@ fun RecordingButton(isRecording: Boolean, onClick: () -> Unit) {
         
         SmallFloatingActionButton(
             onClick = onClick,
-            containerColor = if (isRecording) Color(0xFFFF3D00) else MaterialTheme.colorScheme.primary,
-            contentColor = if (isRecording) Color.White else Color.Black,
+            containerColor = if (isRecording) Color(0xFFFF5252) else InsightsPrimary,
+            contentColor = Color.White,
             shape = CircleShape,
-            modifier = Modifier.size(56.dp)
+            modifier = Modifier.size(buttonSize)
         ) {
             Icon(
                 if (isRecording) Icons.Default.Stop else Icons.Default.Mic,
                 contentDescription = if (isRecording) "Stop" else "Voice Note",
-                modifier = Modifier.size(24.dp)
+                modifier = Modifier.size(iconSize)
             )
         }
     }

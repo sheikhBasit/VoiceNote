@@ -10,16 +10,26 @@ import androidx.core.app.NotificationCompat
 import androidx.work.*
 import com.example.voicenote.MainActivity
 import com.example.voicenote.data.model.Priority
-import com.example.voicenote.data.repository.FirestoreRepository
+import com.example.voicenote.data.repository.VoiceNoteRepository
+import com.example.voicenote.data.repository.VoiceNoteRepositoryImpl
+import com.example.voicenote.di.NetworkModule
 import kotlinx.coroutines.flow.firstOrNull
 import java.util.concurrent.TimeUnit
 
 class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
-    private val repository = FirestoreRepository()
+    private val repository: VoiceNoteRepository by lazy {
+        val securityManager = NetworkModule.provideSecurityManager(applicationContext)
+        val gson = NetworkModule.provideGson()
+        val okHttpClient = NetworkModule.provideOkHttpClient(securityManager)
+        val retrofit = NetworkModule.provideRetrofit(okHttpClient, gson)
+        val apiService = NetworkModule.provideApiService(retrofit)
+        val webSocketManager = NetworkModule.provideWebSocketManager(okHttpClient, securityManager, gson)
+        VoiceNoteRepositoryImpl(applicationContext, apiService, webSocketManager)
+    }
 
     override suspend fun doWork(): Result {
-        val tasks = repository.getAllTasks().firstOrNull() ?: return Result.success()
+        val tasks = repository.getTasks().firstOrNull() ?: return Result.success()
         val now = System.currentTimeMillis()
 
         tasks.forEach { task ->
@@ -30,12 +40,12 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
                 // 1. Proactive Reminder (30 mins before)
                 if (timeRemaining in 0..TimeUnit.MINUTES.toMillis(30)) {
-                    showNotification(task.description, "Deadline in ${timeRemaining / 60000} minutes!", task.noteId)
+                    showNotification(task.description, "Deadline in ${timeRemaining / 60000} minutes!", task.id)
                 }
 
                 // 2. Auto-Escalation (3 hours before)
                 if (timeRemaining in 0..TimeUnit.HOURS.toMillis(3) && task.priority != Priority.HIGH) {
-                    repository.updateTask(task.copy(priority = Priority.HIGH))
+                    repository.updateTask(task.id, mapOf("priority" to "HIGH")).firstOrNull()
                 }
             }
         }
@@ -43,7 +53,7 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
         return Result.success()
     }
 
-    private fun showNotification(title: String, message: String, noteId: String) {
+    private fun showNotification(title: String, message: String, taskId: String) {
         val notificationManager = applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val channelId = "task_reminders"
 
@@ -54,12 +64,12 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
 
         val intent = Intent(applicationContext, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_CLEAR_TASK
-            putExtra("note_id_to_open", noteId)
+            putExtra("task_id_to_open", taskId)
         }
         
         val pendingIntent = PendingIntent.getActivity(
             applicationContext, 
-            noteId.hashCode(), 
+            taskId.hashCode(), 
             intent, 
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
         )
@@ -73,7 +83,7 @@ class ReminderWorker(context: Context, params: WorkerParameters) : CoroutineWork
             .setAutoCancel(true)
             .build()
 
-        notificationManager.notify(noteId.hashCode(), notification)
+        notificationManager.notify(taskId.hashCode(), notification)
     }
 
     companion object {

@@ -5,7 +5,11 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -27,30 +31,24 @@ fun GlassyTextField(
     error: String? = null,
     isSuccess: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default
+    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
+    keyboardActions: KeyboardActions = KeyboardActions.Default,
+    onClear: (() -> Unit)? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
     
-    // Animation for focus glow
     val glowAlpha by animateFloatAsState(
         targetValue = if (isFocused) 0.15f else 0.05f,
         animationSpec = tween(300),
         label = "glowAlpha"
     )
 
-    // Error shake animation
     val offsetX = remember { Animatable(0f) }
     LaunchedEffect(error) {
         if (error != null) {
             repeat(3) {
-                offsetX.animateTo(
-                    targetValue = 10f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy)
-                )
-                offsetX.animateTo(
-                    targetValue = -10f,
-                    animationSpec = spring(dampingRatio = Spring.DampingRatioHighBouncy)
-                )
+                offsetX.animateTo(10f, spring(dampingRatio = Spring.DampingRatioHighBouncy))
+                offsetX.animateTo(-10f, spring(dampingRatio = Spring.DampingRatioHighBouncy))
             }
             offsetX.animateTo(0f)
         }
@@ -61,7 +59,7 @@ fun GlassyTextField(
             text = label,
             fontSize = 12.sp,
             fontWeight = FontWeight.Bold,
-            color = if (error != null) Color.Red else if (isFocused) Primary else Color.Gray,
+            color = if (error != null) Color.Red else if (isSuccess) Color(0xFF4ADE80) else if (isFocused) Primary else Color.Gray,
             modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
         )
         
@@ -75,14 +73,36 @@ fun GlassyTextField(
                 .background(Color.White.copy(alpha = glowAlpha)),
             visualTransformation = visualTransformation,
             keyboardOptions = keyboardOptions,
+            keyboardActions = keyboardActions,
             shape = RoundedCornerShape(16.dp),
+            trailingIcon = {
+                Row(modifier = Modifier.padding(end = 8.dp)) {
+                    if (value.isNotEmpty() && onClear != null) {
+                        IconButton(onClick = onClear) {
+                            Icon(Icons.Default.Close, "Clear", tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
+                        }
+                    }
+                    AnimatedVisibility(
+                        visible = isSuccess && error == null,
+                        enter = scaleIn() + fadeIn(),
+                        exit = scaleOut() + fadeOut()
+                    ) {
+                        Icon(
+                            Icons.Default.CheckCircle,
+                            "Success",
+                            tint = Color(0xFF4ADE80),
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
+                }
+            },
             colors = TextFieldDefaults.colors(
                 focusedContainerColor = Color.Transparent,
                 unfocusedContainerColor = Color.Transparent,
                 disabledContainerColor = Color.Transparent,
-                focusedIndicatorColor = Primary,
-                unfocusedIndicatorColor = Color.White.copy(alpha = 0.2f),
-                cursorColor = Primary,
+                focusedIndicatorColor = if (isSuccess) Color(0xFF4ADE80) else Primary,
+                unfocusedIndicatorColor = if (isSuccess) Color(0xFF4ADE80).copy(alpha = 0.5f) else Color.White.copy(alpha = 0.2f),
+                cursorColor = if (isSuccess) Color(0xFF4ADE80) else Primary,
                 errorIndicatorColor = Color.Red
             ),
             isError = error != null,

@@ -5,7 +5,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -15,19 +14,21 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.example.voicenote.features.dashboard.GlassCard
-import com.example.voicenote.features.dashboard.GlassIconButton
+import com.example.voicenote.ui.components.GlassCard
 import com.example.voicenote.ui.theme.*
 
 @Composable
-fun NoteAnalysisScreen(onBack: () -> Unit = {}) {
+fun NoteAnalysisDetailScreen(onBack: () -> Unit = {}) {
     Box(
         modifier = Modifier
             .fillMaxSize()
@@ -38,7 +39,7 @@ fun NoteAnalysisScreen(onBack: () -> Unit = {}) {
             
             LazyColumn(
                 modifier = Modifier.weight(1f),
-                contentPadding = PaddingValues(bottom = 100.dp) // Space for transcript bar
+                contentPadding = PaddingValues(bottom = 100.dp)
             ) {
                 item { MediaPlayerSection() }
                 item { AiInsightsBadges() }
@@ -61,21 +62,39 @@ private fun AnalysisTopBar(onBack: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        GlassIconButton(icon = Icons.Default.ChevronLeft)
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(InsightsGlassWhite)
+                .border(1.dp, InsightsGlassBorder, CircleShape)
+                .clickable { onBack() },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.ArrowBackIosNew, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text("Product Strategy Sync", color = Color.White, fontSize = 16.sp, fontWeight = FontWeight.Bold)
             Text("OCT 24 • 14:20", color = Color(0xFFa19db9), fontSize = 10.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.sp)
         }
-        GlassIconButton(icon = Icons.Default.Share)
+        Box(
+            modifier = Modifier
+                .size(40.dp)
+                .clip(CircleShape)
+                .background(InsightsGlassWhite)
+                .border(1.dp, InsightsGlassBorder, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Share, contentDescription = null, tint = Color.White, modifier = Modifier.size(20.dp))
+        }
     }
 }
 
 @Composable
 private fun MediaPlayerSection() {
     Box(modifier = Modifier.padding(24.dp)) {
-        GlassCard {
+        GlassCard(color = InsightsGlassWhite.copy(alpha = 0.04f), borderColor = InsightsGlassBorder) {
             Column(modifier = Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-                // Waveform
                 Row(
                     modifier = Modifier.height(80.dp).fillMaxWidth().padding(horizontal = 8.dp),
                     horizontalArrangement = Arrangement.spacedBy(4.dp),
@@ -95,7 +114,6 @@ private fun MediaPlayerSection() {
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Progress
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Box(
                         modifier = Modifier
@@ -109,6 +127,7 @@ private fun MediaPlayerSection() {
                                 .fillMaxWidth(0.45f)
                                 .fillMaxHeight()
                                 .background(InsightsPrimary)
+                                .shadow(10.dp, spotColor = InsightsPrimary)
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -119,11 +138,13 @@ private fun MediaPlayerSection() {
                 
                 Spacer(modifier = Modifier.height(24.dp))
                 
-                // Controls
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(32.dp)) {
                     Icon(Icons.Default.Replay10, contentDescription = null, tint = Color.White.copy(alpha=0.6f), modifier = Modifier.size(24.dp))
                     Box(
-                        modifier = Modifier.size(56.dp).background(InsightsPrimary, CircleShape),
+                        modifier = Modifier
+                            .size(56.dp)
+                            .background(InsightsPrimary, CircleShape)
+                            .shadow(16.dp, CircleShape, spotColor = InsightsPrimary.copy(alpha=0.4f)),
                         contentAlignment = Alignment.Center
                     ) {
                         Icon(Icons.Default.PlayArrow, contentDescription = null, tint = Color.White, modifier = Modifier.size(32.dp))
@@ -152,9 +173,9 @@ private fun RowScope.InsightBadge(icon: androidx.compose.ui.graphics.vector.Imag
         modifier = Modifier
             .weight(1f)
             .clip(RoundedCornerShape(20.dp))
-            .background(Color.White.copy(alpha=0.04f))
-            .border(1.dp, Color.White.copy(alpha=0.08f), RoundedCornerShape(20.dp))
-            .padding(16.dp)
+            .background(InsightsGlassWhite)
+            .border(1.dp, InsightsGlassBorder, RoundedCornerShape(20.dp))
+            .padding(horizontal = 16.dp, vertical = 12.dp)
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
             Box(
@@ -179,7 +200,7 @@ private fun SummarySection() {
             Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = InsightsPrimary)
         }
         
-        GlassCard {
+        GlassCard(color = InsightsGlassWhite.copy(alpha = 0.04f), borderColor = InsightsGlassBorder) {
             Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                 SummaryItem("Finalized the Q4 product roadmap focus areas, prioritizing the mobile-first redesign.")
                 SummaryItem("Identified three key technical blockers for the API integration phase.")
@@ -217,7 +238,7 @@ private fun ActionItemsSection() {
 
 @Composable
 private fun ActionCard(title: String, subtitle: String, priority: String, priorityColor: Color, isCompleted: Boolean = false) {
-    GlassCard {
+    GlassCard(color = InsightsGlassWhite.copy(alpha = 0.04f), borderColor = InsightsGlassBorder) {
         Row(modifier = Modifier.padding(16.dp).fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(16.dp)) {
             Box(
                 modifier = Modifier
@@ -256,6 +277,7 @@ private fun TranscriptCollapsibleBar(modifier: Modifier = Modifier) {
             .clip(RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
             .background(InsightsBackgroundDark)
             .border(1.dp, Color.White.copy(alpha=0.1f), RoundedCornerShape(topStart = 32.dp, topEnd = 32.dp))
+            .shadow(40.dp, spotColor = Color.Black.copy(alpha = 0.5f))
             .padding(24.dp)
     ) {
         Column {

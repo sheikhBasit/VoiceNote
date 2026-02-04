@@ -20,37 +20,19 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun GlassyCard(
     modifier: Modifier = Modifier,
+    color: Color = Color.White.copy(alpha = 0.03f),
+    borderColor: Color = Color.White.copy(alpha = 0.08f),
     content: @Composable ColumnScope.() -> Unit
 ) {
     Box(
         modifier = modifier
-            .shadow(
-                elevation = 20.dp,
-                shape = RoundedCornerShape(24.dp),
-                ambientColor = Color.Black.copy(alpha = 0.5f),
-                spotColor = Color.Black.copy(alpha = 0.8f)
-            )
             .clip(RoundedCornerShape(24.dp))
-            .background(
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.15f),
-                        Color.White.copy(alpha = 0.05f)
-                    )
-                )
-            )
+            .background(color)
             .border(
                 width = 1.dp,
-                brush = Brush.verticalGradient(
-                    colors = listOf(
-                        Color.White.copy(alpha = 0.3f),
-                        Color.Transparent,
-                        Color.White.copy(alpha = 0.1f)
-                    )
-                ),
+                color = borderColor,
                 shape = RoundedCornerShape(24.dp)
             )
-            .blur(radius = 16.dp) // Soft focus for depth
     ) {
         Column(
             modifier = Modifier
@@ -74,6 +56,13 @@ object GlassyEffects {
         colors = listOf(
             Color(0xFF00E5FF).copy(alpha = 0.3f),
             Color(0xFF7C4DFF).copy(alpha = 0.3f)
+        )
+    )
+
+    val BackgroundMesh = Brush.radialGradient(
+        colors = listOf(
+            Color(0xFF4b2bee).copy(alpha = 0.15f),
+            Color.Transparent
         )
     )
 }

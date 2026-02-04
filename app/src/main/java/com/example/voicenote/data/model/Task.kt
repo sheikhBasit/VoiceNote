@@ -6,7 +6,7 @@ enum class CommunicationType { WHATSAPP, SMS, CALL, MEET, SLACK }
 
 data class Task(
     val id: String = "",
-    val noteId: String = "",
+    val noteId: String? = null,
     val description: String = "",
     @get:PropertyName("isDone")
     @set:PropertyName("isDone")
@@ -32,5 +32,7 @@ data class Task(
     @set:PropertyName("isActionApproved")
     var isActionApproved: Boolean = false,
     // Multimedia support
-    val imageUrl: String? = null
+    val imageUrl: String? = null,
+    val documentUris: List<String> = emptyList(),
+    val imageUris: List<String> = emptyList()
 )
