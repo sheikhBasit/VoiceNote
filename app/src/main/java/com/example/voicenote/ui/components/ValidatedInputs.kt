@@ -12,6 +12,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
@@ -26,14 +27,15 @@ import com.example.voicenote.ui.theme.Primary
 fun GlassyTextField(
     value: String,
     onValueChange: (String) -> Unit,
-    label: String,
+    label: String = "",
     modifier: Modifier = Modifier,
     error: String? = null,
     isSuccess: Boolean = false,
     visualTransformation: VisualTransformation = VisualTransformation.None,
     keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
     keyboardActions: KeyboardActions = KeyboardActions.Default,
-    onClear: (() -> Unit)? = null
+    onClear: (() -> Unit)? = null,
+    trailingIcon: (@Composable () -> Unit)? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
     
@@ -55,13 +57,15 @@ fun GlassyTextField(
     }
 
     Column(modifier = modifier.offset(x = offsetX.value.dp)) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Bold,
-            color = if (error != null) Color.Red else if (isSuccess) Color(0xFF4ADE80) else if (isFocused) Primary else Color.Gray,
-            modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
-        )
+        if (label.isNotEmpty()) {
+            Text(
+                text = label,
+                fontSize = 12.sp,
+                fontWeight = FontWeight.Bold,
+                color = if (error != null) Color.Red else if (isSuccess) Color(0xFF4ADE80) else if (isFocused) Primary else Color.Gray,
+                modifier = Modifier.padding(start = 4.dp, bottom = 4.dp)
+            )
+        }
         
         OutlinedTextField(
             value = value,
@@ -76,12 +80,16 @@ fun GlassyTextField(
             keyboardActions = keyboardActions,
             shape = RoundedCornerShape(16.dp),
             trailingIcon = {
-                Row(modifier = Modifier.padding(end = 8.dp)) {
+                Row(
+                    modifier = Modifier.padding(end = 8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     if (value.isNotEmpty() && onClear != null) {
                         IconButton(onClick = onClear) {
                             Icon(Icons.Default.Close, "Clear", tint = Color.White.copy(alpha = 0.4f), modifier = Modifier.size(20.dp))
                         }
                     }
+                    trailingIcon?.invoke()
                     AnimatedVisibility(
                         visible = isSuccess && error == null,
                         enter = scaleIn() + fadeIn(),

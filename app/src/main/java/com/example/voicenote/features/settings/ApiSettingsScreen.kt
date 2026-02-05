@@ -1,5 +1,6 @@
 package com.example.voicenote.features.settings
 
+import android.app.TimePickerDialog
 import android.widget.Toast
 import androidx.compose.animation.*
 import androidx.compose.foundation.background
@@ -31,6 +32,7 @@ import com.example.voicenote.ui.components.GlassCard
 import com.example.voicenote.ui.components.GlassyTextField
 import com.example.voicenote.ui.components.ShimmerCard
 import com.example.voicenote.ui.theme.*
+import java.util.*
 
 @Composable
 fun ApiSettingsScreen(
@@ -68,7 +70,7 @@ fun ApiSettingsScreen(
                 is SettingsUiState.Success -> {
                     SettingsContent(
                         user = state.user,
-                        isFloatingEnabled = viewModel.isFloatingButtonEnabled(),
+                        isFloatingEnabled = viewModel.isFloatingEnabled.collectAsState().value,
                         onFloatingToggle = { viewModel.setFloatingButtonEnabled(it) },
                         onUpdate = { viewModel.updateSettings(it) },
                         onAddJargon = { viewModel.addJargon(it) },
@@ -129,6 +131,9 @@ private fun SettingsContent(
     onDestroy: () -> Unit,
     onHelpClick: () -> Unit
 ) {
+    val context = LocalContext.current
+    var tempSystemPrompt by remember(user.systemPrompt) { mutableStateOf(user.systemPrompt ?: "") }
+
     LazyColumn(
         modifier = Modifier.fillMaxSize(),
         contentPadding = PaddingValues(16.dp),
@@ -194,10 +199,17 @@ private fun SettingsContent(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("System Persona", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     GlassyTextField(
-                        value = user.systemPrompt ?: "",
-                        onValueChange = { onUpdate(mapOf("system_prompt" to it)) },
+                        value = tempSystemPrompt,
+                        onValueChange = { tempSystemPrompt = it },
                         label = "Custom AI Instructions",
-                        modifier = Modifier.fillMaxWidth()
+                        modifier = Modifier.fillMaxWidth(),
+                        trailingIcon = {
+                            if (tempSystemPrompt != (user.systemPrompt ?: "")) {
+                                IconButton(onClick = { onUpdate(mapOf("system_prompt" to tempSystemPrompt)) }) {
+                                    Icon(Icons.Default.Check, null, tint = InsightsPrimary)
+                                }
+                            }
+                        }
                     )
                     Text("Tell the AI how to analyze your notes (e.g. \"Be concise and focus on action items\").", color = Color.White.copy(alpha=0.4f), fontSize = 11.sp)
                 }
@@ -211,13 +223,13 @@ private fun SettingsContent(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     Text("Role Identity", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                     
-                    androidx.compose.foundation.layout.FlowRow(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp), 
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf("STUDENT", "TEACHER", "DEVELOPER", "OFFICE_WORKER", "BUSINESS_MAN", "PSYCHOLOGIST", "GENERIC").forEach { role ->
-                            val isSelected = user.primaryRole.toString() == role
+                            val isSelected = user.primaryRole == role
                             FilterChip(
                                 selected = isSelected,
                                 onClick = { onUpdate(mapOf("primary_role" to role)) },
@@ -240,16 +252,42 @@ private fun SettingsContent(
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         user.jargons.forEach { tag ->
-                            InputChip(
-                                selected = true,
-                                onClick = { onRemoveJargon(tag) },
-                                label = { Text(tag, fontSize = 12.sp) },
-                                trailingIcon = { Icon(Icons.Default.Close, null, modifier = Modifier.size(14.dp)) },
-                                colors = InputChipDefaults.inputChipColors(
-                                    selectedContainerColor = Color.White.copy(alpha = 0.1f),
-                                    selectedLabelColor = Color.White
+                            var isEditingTag by remember { mutableStateOf(false) }
+                            var editValue by remember { mutableStateOf(tag) }
+
+                            if (isEditingTag) {
+                                GlassyTextField(
+                                    value = editValue,
+                                    onValueChange = { editValue = it },
+                                    modifier = Modifier.width(120.dp),
+                                    trailingIcon = {
+                                        IconButton(onClick = { 
+                                            onRemoveJargon(tag)
+                                            onAddJargon(editValue)
+                                            isEditingTag = false 
+                                        }) {
+                                            Icon(Icons.Default.Check, null, tint = InsightsPrimary, modifier = Modifier.size(16.dp))
+                                        }
+                                    }
                                 )
-                            )
+                            } else {
+                                InputChip(
+                                    selected = true,
+                                    onClick = { isEditingTag = true },
+                                    label = { Text(tag, fontSize = 12.sp) },
+                                    trailingIcon = { 
+                                        Icon(
+                                            Icons.Default.Close, 
+                                            null, 
+                                            modifier = Modifier.size(14.dp).clickable { onRemoveJargon(tag) }
+                                        ) 
+                                    },
+                                    colors = InputChipDefaults.inputChipColors(
+                                        selectedContainerColor = Color.White.copy(alpha = 0.1f),
+                                        selectedLabelColor = Color.White
+                                    )
+                                )
+                            }
                         }
                         
                         var showAddJargon by remember { mutableStateOf(false) }
@@ -260,10 +298,14 @@ private fun SettingsContent(
                                 onValueChange = { newJargon = it },
                                 label = "Add jargon...",
                                 modifier = Modifier.width(150.dp),
-                                keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = {
-                                    if (newJargon.isNotBlank()) onAddJargon(newJargon)
-                                    showAddJargon = false
-                                })
+                                trailingIcon = {
+                                    IconButton(onClick = {
+                                        if (newJargon.isNotBlank()) onAddJargon(newJargon)
+                                        showAddJargon = false
+                                    }) {
+                                        Icon(Icons.Default.Add, null, tint = InsightsPrimary)
+                                    }
+                                }
                             )
                         } else {
                             AssistChip(
@@ -288,22 +330,35 @@ private fun SettingsContent(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        TimeChip(label = "Start", time = "${user.workStartHour}:00", onClick = { /* Show clock picker */ })
-                        TimeChip(label = "End", time = "${user.workEndHour}:00", onClick = { /* Show clock picker */ })
+                        TimeChip(label = "Start", time = "${user.workStartHour}:00", onClick = {
+                            TimePickerDialog(context, { _, hour, _ ->
+                                onUpdate(mapOf("work_start_hour" to hour))
+                            }, user.workStartHour, 0, true).show()
+                        })
+                        TimeChip(label = "End", time = "${user.workEndHour}:00", onClick = {
+                            TimePickerDialog(context, { _, hour, _ ->
+                                onUpdate(mapOf("work_end_hour" to hour))
+                            }, user.workEndHour, 0, true).show()
+                        })
                     }
 
                     Spacer(Modifier.height(8.dp))
                     Text("Work Days", color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Bold)
-                    androidx.compose.foundation.layout.FlowRow(
+                    FlowRow(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(8.dp),
                         verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun").forEachIndexed { index, day ->
-                            val isSelected = (index + 2) in listOf(2, 3, 4, 5, 6)
+                            val apiDayValue = index + 1 // Backend might use 1-7 for Mon-Sun
+                            val isSelected = apiDayValue in user.workDays
                             FilterChip(
                                 selected = isSelected,
-                                onClick = { },
+                                onClick = { 
+                                    val newDays = if (isSelected) user.workDays.filter { it != apiDayValue } 
+                                                 else user.workDays + apiDayValue
+                                    onUpdate(mapOf("work_days" to newDays))
+                                },
                                 label = { Text(day, fontSize = 12.sp) },
                                 colors = FilterChipDefaults.filterChipColors(
                                     selectedContainerColor = InsightsPrimary.copy(alpha = 0.1f),

@@ -2,6 +2,9 @@ package com.example.voicenote.ui.navigation
 
 import android.content.Intent
 import android.os.Build
+import androidx.compose.animation.animateColorAsState
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.spring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -43,6 +46,7 @@ import com.example.voicenote.features.billing.UsageBillingScreen
 import com.example.voicenote.features.notifications.NotificationScreen
 import com.example.voicenote.features.notifications.NotificationType
 import com.example.voicenote.ui.theme.Background
+import com.example.voicenote.ui.theme.Gray400
 import com.example.voicenote.ui.theme.InsightsGlassBorder
 import com.example.voicenote.ui.theme.InsightsPrimary
 
@@ -96,7 +100,7 @@ fun AppNavigation(
                         // First two items
                         items.take(2).forEach { screen ->
                             NavigationBarItem(
-                                icon = { Icon(screen.icon, contentDescription = screen.label) },
+                                icon = { Icon(screen.icon, contentDescription = screen.label, tint = Color.White) },
                                 label = { Text(screen.label, color = Color.White) },
                                 selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                 colors = NavigationBarItemDefaults.colors(
@@ -124,7 +128,7 @@ fun AppNavigation(
                         // Last two items
                         items.takeLast(2).forEach { screen ->
                             NavigationBarItem(
-                                icon = { Icon(screen.icon, contentDescription = screen.label) },
+                                icon = { Icon(screen.icon, contentDescription = screen.label, tint = Color.White) },
                                 label = { Text(screen.label, color = Color.White) },
                                 selected = currentDestination?.hierarchy?.any { it.route == screen.route } == true,
                                 colors = NavigationBarItemDefaults.colors(
@@ -147,13 +151,18 @@ fun AppNavigation(
                         }
                     }
 
-                    // Center Floating Mic Button
+                    // Center Floating Mic Button with Toggle Animation
+                    val fabColor by animateColorAsState(
+                        targetValue = if (isRecording) Color(0xFFFF5252) else Gray400,
+                        animationSpec = spring(stiffness = Spring.StiffnessLow)
+                    )
+
                     Box(
                         modifier = Modifier
                             .offset(y = (-20).dp)
                             .size(64.dp)
                             .shadow(12.dp, CircleShape, spotColor = InsightsPrimary)
-                            .background(if(isRecording) Color(0xFFFF5252) else InsightsPrimary, CircleShape)
+                            .background(fabColor, CircleShape)
                             .border(4.dp, Background, CircleShape)
                             .clip(CircleShape)
                             .clickable {
@@ -209,7 +218,8 @@ fun AppNavigation(
                     onNoteClick = { note -> navController.navigate("detail/${note.id}") },
                     onSearchClick = { navController.navigate("search") },
                     onBillingClick = { navController.navigate("billing") },
-                    onJoinMeetingClick = { navController.navigate("join_meeting") }
+                    onJoinMeetingClick = { navController.navigate("join_meeting") },
+                    onViewAllNotes = { /* Navigation to view all notes if needed */ }
                 ) 
             }
             composable(Screen.Settings.route) { 
