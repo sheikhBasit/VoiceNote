@@ -21,6 +21,15 @@ import javax.inject.Singleton
 
 import com.example.voicenote.core.config.Config
 
+// Placeholder for location
+object CurrentLocation {
+    private var gpsCoords: String = ""
+    fun get(): String = gpsCoords
+    fun set(coords: String) {
+        gpsCoords = coords
+    }
+}
+
 @Module
 @InstallIn(SingletonComponent::class)
 object NetworkModule {
@@ -46,7 +55,7 @@ object NetworkModule {
             level = if (BuildConfig.DEBUG) {
                 HttpLoggingInterceptor.Level.BODY
             } else {
-                HttpLoggingInterceptor.Level.BASIC
+                HttpLoggingInterceptor.Level.NONE
             }
         }
         
@@ -58,6 +67,12 @@ object NetworkModule {
                 securityManager.getSessionToken()?.let {
                     request.addHeader("Authorization", "Bearer $it")
                 }
+                
+                val coords = CurrentLocation.get()
+                if (coords.isNotEmpty()) {
+                    request.addHeader("X-GPS-Coords", coords)
+                }
+
                 chain.proceed(request.build())
             }
             .build()

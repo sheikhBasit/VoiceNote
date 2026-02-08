@@ -5,6 +5,7 @@ plugins {
     id("kotlin-kapt")
     alias(libs.plugins.hilt)
     alias(libs.plugins.google.services)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -114,6 +115,10 @@ dependencies {
     // Coroutines
     implementation(libs.coroutinesAndroid)
     implementation(libs.coroutinesPlayServices)
+
+    // Serialization
+    implementation(libs.kotlinx.serialization.json)
+    implementation(libs.androidx.navigation.compose.serialization)
 
     // Testing
     testImplementation(libs.junit)
